@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="lt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Slėpynės Veisiejuose</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+/* =====================================================================
+   NUSTATYMAI – KEISKITE ČIA
+   ===================================================================== */
+
+// Žaidimo zonos riba: [platuma, ilguma] taškai iš eilės (poligonas užsidaro savaime).
+// Naują ribą nupieškite "Redaguoti" režimu ir įklijuokite vietoje šio masyvo.
+const GAME_BOUNDARY = [
+  [54.10820, 23.68480],
+  [54.10860, 23.69400],
+  [54.10700, 23.70300],
+  [54.10250, 23.70700],
+  [54.09650, 23.70450],
+  [54.09400, 23.69700],
+  [54.09550, 23.68750],
+  [54.10100, 23.68300],
+];
+
+// Draudžiamos zonos (privačios teritorijos, vanduo ir pan.).
+const FORBIDDEN_ZONES = [
+  {
+    name: "Pavyzdinė zona (pakeiskite arba ištrinkite)",
+    coords: [
+      [54.10380, 23.69950],
+      [54.10400, 23.70180],
+      [54.10260, 23.70220],
+      [54.10240, 23.69980],
+    ],
+  },
+];
+
+// Laikmačio numatytosios reikšmės (minutėmis)
+const DEFAULT_HIDE_MIN = 10;
+const DEFAULT_SEEK_MIN = 60;
+
+// Kai iki ribos liko mažiau nei tiek metrų – rodomas oranžinis perspėjimas
+const NEAR_BOUNDARY_M = 30;
+
+// Žemėlapio centras ir priartinimas
+const MAP_CENTER = [54.101, 23.696];
+const MAP_ZOOM = 15;
+
+// Taisyklės – paprastas tekstas, naujos eilutės išlaikomos
+const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus už ribos – telefonas įspės.
+
+2. Draudžiamos zonos (oranžinės) – ten slėptis negalima: privačios teritorijos, vanduo.
+
+3. Slėpimosi laikas – slėpėjai išsisklaido, ieškotojai stovi starte ir neseka.
+
+4. Paieškos laikas – ieškotojai ieško. Rastas žaidėjas prisijungia prie ieškotojų (arba grįžta į startą – susitarkite).
+
+5. Nelipti per tvoras, neįeiti į kiemus ir pastatus, gerbti gyventojus.
+
+6. Saugumas: atsargiai prie kelių ir vandens, telefonas visada įkrautas ir su garsu.
+
+7. Pasibaigus laikui – visi grįžta į startą.`;
+/* ===================================================================== */
+</script>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#181b22; --panel2:#222630; --line:#2e3340;
+    --text:#eef1f6; --muted:#9aa3b2; --accent:#4da3ff; --ok:#3ecf72;
+    --warn:#ffad33; --danger:#ff4d4d; --radius:16px;
+    --safe-b:env(safe-area-inset-bottom,0px); --safe-t:env(safe-area-inset-top,0px);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+    font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden}
+  #map{position:fixed;inset:0;background:#0b0d10}
+  body.dark-map .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.95) contrast(.9) saturate(.6)}
+  .leaflet-control-attribution{background:rgba(15,17,21,.7)!important;color:#888!important;font-size:10px}
+  .leaflet-control-attribution a{color:#aaa!important}
+  .leaflet-control-zoom{display:none}
+
+  /* Viršutinė juosta */
+  #topbar{position:fixed;left:8px;right:8px;top:calc(8px + var(--safe-t));z-index:1000;
+    display:flex;gap:8px;pointer-events:none}
+  .chip{pointer-events:auto;background:rgba(24,27,34,.92);border:1px solid var(--line);
+    border-radius:14px;padding:8px 12px;backdrop-filter:blur(6px);min-height:52px;
+    display:flex;flex-direction:column;justify-content:center}
+  .chip small{color:var(--muted);font-size:12px;line-height:1.1}
+  .chip b{font-size:18px;line-height:1.2;font-variant-numeric:tabular-nums}
+  #zoneChip{flex:1;min-width:0}
+  #zoneChip b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #timerChip{min-width:104px;text-align:right}
+  #timerChip.hide b{color:var(--warn)} #timerChip.seek b{color:var(--accent)}
+  .ok{color:var(--ok)} .near{color:var(--warn)} .bad{color:var(--danger)}
+
+  /* Šoniniai mygtukai */
+  #sideBtns{position:fixed;right:8px;top:calc(72px + var(--safe-t));z-index:1000;
+    display:flex;flex-direction:column;gap:8px}
+  .round{width:48px;height:48px;border-radius:50%;border:1px solid var(--line);
+    background:rgba(24,27,34,.92);color:var(--text);font-size:20px;cursor:pointer}
+  .round:active{transform:scale(.94)}
+
+  /* Apatinė juosta */
+  #bottombar{position:fixed;left:0;right:0;bottom:0;z-index:1100;
+    padding:8px 8px calc(8px + var(--safe-b));display:grid;grid-template-columns:repeat(4,1fr);gap:8px;
+    background:linear-gradient(to top,rgba(15,17,21,.98) 70%,rgba(15,17,21,0))}
+  .navbtn{height:68px;border:1px solid var(--line);border-radius:var(--radius);
+    background:var(--panel);color:var(--text);font-size:13px;font-weight:600;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer}
+  .navbtn span{font-size:24px;line-height:1}
+  .navbtn.active{background:var(--accent);border-color:var(--accent);color:#04121f}
+  .navbtn:active{transform:scale(.97)}
+
+  /* Lapai (bottom sheets) */
+  .sheet{position:fixed;left:0;right:0;bottom:0;z-index:1050;max-height:72dvh;overflow:auto;
+    background:var(--panel);border-top:1px solid var(--line);border-radius:22px 22px 0 0;
+    padding:14px 16px calc(100px + var(--safe-b));transform:translateY(105%);
+    transition:transform .22s ease;box-shadow:0 -10px 30px rgba(0,0,0,.5)}
+  .sheet.open{transform:none}
+  #sheet-edit{max-height:44dvh}
+  .sheet h2{margin:0 0 12px;font-size:20px;display:flex;justify-content:space-between;align-items:center}
+  .x{background:none;border:0;color:var(--muted);font-size:28px;padding:0 4px;cursor:pointer}
+  .btn{display:block;width:100%;min-height:56px;border-radius:14px;border:1px solid var(--line);
+    background:var(--panel2);color:var(--text);font-size:17px;font-weight:600;margin:8px 0;cursor:pointer}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#04121f}
+  .btn.danger{background:#3a1717;border-color:#6b2424;color:#ffb3b3}
+  .btn:active{transform:scale(.98)} .btn:disabled{opacity:.4}
+  .row{display:flex;gap:8px} .row>*{flex:1}
+  label.field{display:block;margin:6px 0;color:var(--muted);font-size:14px}
+  input[type=number],input[type=text],textarea{width:100%;min-height:52px;border-radius:12px;
+    border:1px solid var(--line);background:#0f1115;color:var(--text);font-size:20px;padding:8px 12px;margin-top:4px}
+  textarea{font:12px/1.4 ui-monospace,Consolas,monospace;min-height:110px}
+  .bigtime{font-size:56px;font-weight:700;text-align:center;font-variant-numeric:tabular-nums;margin:4px 0}
+  .phase{text-align:center;color:var(--muted);font-size:16px;text-transform:uppercase;letter-spacing:.08em}
+  #rulesText{white-space:pre-line;font-size:17px;line-height:1.5}
+  .seg{display:flex;background:#0f1115;border:1px solid var(--line);border-radius:14px;padding:4px;gap:4px}
+  .seg button{flex:1;min-height:48px;border:0;border-radius:10px;background:none;color:var(--muted);font-size:15px;font-weight:600}
+  .seg button.on{background:var(--panel2);color:var(--text)}
+  .hint{color:var(--muted);font-size:14px;margin:8px 0}
+  .zone-item{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
+  .zone-item span{flex:1} .zone-item button{min-height:40px;padding:0 14px;border-radius:10px;border:1px solid #6b2424;background:#3a1717;color:#ffb3b3}
+
+  /* Įspėjimas */
+  #alarm{position:fixed;inset:0;z-index:1200;pointer-events:none;display:none;
+    box-shadow:inset 0 0 0 10px var(--danger);animation:pulse 1s infinite}
+  #alarm.show{display:block}
+  #alarmBox{position:absolute;left:12px;right:12px;top:calc(76px + var(--safe-t));
+    background:var(--danger);color:#fff;border-radius:16px;padding:14px 16px;text-align:center;
+    font-size:22px;font-weight:800;box-shadow:0 6px 24px rgba(0,0,0,.5)}
+  #alarmBox small{display:block;font-size:16px;font-weight:600;opacity:.95;margin-top:2px}
+  @keyframes pulse{50%{box-shadow:inset 0 0 0 18px rgba(255,77,77,.55)}}
+
+  #toast{position:fixed;left:50%;bottom:calc(96px + var(--safe-b));transform:translateX(-50%);z-index:1300;
+    background:#222630;border:1px solid var(--line);padding:10px 16px;border-radius:12px;display:none;max-width:90vw;text-align:center}
+  #editBanner{position:fixed;left:8px;right:64px;top:calc(72px + var(--safe-t));z-index:1000;display:none;
+    background:rgba(77,163,255,.95);color:#04121f;font-weight:700;border-radius:12px;padding:10px 12px;font-size:14px}
+  body.editing #editBanner{display:block}
+
+  .me-dot{width:20px;height:20px;border-radius:50%;background:var(--accent);border:3px solid #fff;
+    box-shadow:0 0 0 6px rgba(77,163,255,.3)}
+  .me-dot.out{background:var(--danger);box-shadow:0 0 0 6px rgba(255,77,77,.35)}
+  .vtx{width:22px;height:22px;border-radius:50%;background:#fff;border:3px solid var(--accent)}
+  .vtx.first{border-color:var(--ok);background:var(--ok)}
+</style>
+</head>
+<body class="dark-map">
+
+<div id="map"></div>
+
+<div id="topbar">
+  <div class="chip" id="zoneChip"><small id="zoneLabel">Vieta</small><b id="zoneText">GPS išjungtas</b></div>
+  <div class="chip" id="timerChip"><small id="timerLabel">Laikmatis</small><b id="timerText">--:--</b></div>
+</div>
+
+<div id="sideBtns">
+  <button class="round" id="btnCenter" title="Centruoti į mane">🎯</button>
+  <button class="round" id="btnFit" title="Rodyti visą zoną">🗺️</button>
+  <button class="round" id="btnTheme" title="Šviesus / tamsus žemėlapis">🌓</button>
+</div>
+
+<div id="editBanner">✏️ Spauskite žemėlapį – pridėsite tašką</div>
+
+<div id="alarm"><div id="alarmBox"><span id="alarmTitle">⚠️ UŽ RIBOS!</span><small id="alarmSub">Grįžk atgal</small></div></div>
+<div id="toast"></div>
+
+<!-- Laikmatis -->
+<section class="sheet" id="sheet-timer">
+  <h2>⏱ Laikmatis <button class="x" data-close>×</button></h2>
+  <div class="phase" id="phaseText">Neprasidėjęs</div>
+  <div class="bigtime" id="bigTime">00:00</div>
+  <div id="timerSetup">
+    <div class="row">
+      <label class="field">Slėpimasis (min)<input type="number" id="hideMin" min="0" max="180" inputmode="numeric"></label>
+      <label class="field">Paieška (min)<input type="number" id="seekMin" min="1" max="600" inputmode="numeric"></label>
+    </div>
+    <button class="btn primary" id="btnStart">▶ Pradėti žaidimą</button>
+  </div>
+  <div id="timerRunning" style="display:none">
+    <button class="btn" id="btnSkip">⏭ Pereiti į kitą etapą</button>
+    <button class="btn danger" id="btnStop">■ Sustabdyti</button>
+  </div>
+  <button class="btn" id="btnTestSound">🔊 Išbandyti garsą</button>
+  <p class="hint">Laikas skaičiuojamas net jei ekranas užgęsta. Kad girdėtumėte signalą – laikykite puslapį atidarytą ir telefoną su garsu.</p>
+</section>
+
+<!-- Taisyklės -->
+<section class="sheet" id="sheet-rules">
+  <h2>📜 Taisyklės <button class="x" data-close>×</button></h2>
+  <div id="rulesText"></div>
+</section>
+
+<!-- Redagavimas -->
+<section class="sheet" id="sheet-edit">
+  <h2>✏️ Ribų redagavimas <button class="x" data-close>×</button></h2>
+  <div class="seg" id="editTarget">
+    <button data-t="boundary" class="on">Žaidimo riba</button>
+    <button data-t="zone">Draudžiama zona</button>
+  </div>
+  <label class="field" id="zoneNameWrap" style="display:none">Zonos pavadinimas
+    <input type="text" id="zoneName" placeholder="pvz. Privatus kiemas" style="font-size:17px"></label>
+  <p class="hint" id="draftInfo">Taškų: 0</p>
+  <div class="row">
+    <button class="btn" id="btnUndo">↶ Atšaukti tašką</button>
+    <button class="btn" id="btnClear">🗑 Išvalyti</button>
+  </div>
+  <button class="btn" id="btnLoadCurrent">📥 Įkelti esamą ribą redagavimui</button>
+  <button class="btn primary" id="btnApply">✔ Pritaikyti žemėlapyje</button>
+  <button class="btn primary" id="btnCopy">📋 Kopijuoti koordinates</button>
+  <textarea id="copyOut" readonly placeholder="Čia atsiras kodas, kurį reikia įklijuoti į index.html viršų"></textarea>
+  <p class="hint">Nukopijuotą tekstą įklijuokite <b>index.html</b> faile vietoje <code>const GAME_BOUNDARY = [...]</code> arba <code>const FORBIDDEN_ZONES = [...]</code>. Pakeitimai žemėlapyje be kodo pakeitimo matomi tik jums ir dingsta perkrovus puslapį.</p>
+  <div id="zoneList"></div>
+  <button class="btn danger" id="btnExitEdit">Baigti redagavimą</button>
+</section>
+
+<nav id="bottombar">
+  <button class="navbtn" id="navLocate"><span>📍</span>Mano vieta</button>
+  <button class="navbtn" data-sheet="timer"><span>⏱</span>Laikmatis</button>
+  <button class="navbtn" data-sheet="rules"><span>📜</span>Taisyklės</button>
+  <button class="navbtn" data-sheet="edit"><span>✏️</span>Redaguoti</button>
+</nav>
+
+<script>
+(function(){
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const store = {
+    get(k, d){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; }catch(e){ return d; } },
+    set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} },
+    del(k){ try{ localStorage.removeItem(k); }catch(e){} }
+  };
+  function toast(msg, ms){
+    const t = $("toast"); t.textContent = msg; t.style.display = "block";
+    clearTimeout(toast._t); toast._t = setTimeout(() => t.style.display = "none", ms || 2200);
+  }
+
+  if (typeof L === "undefined") {
+    document.body.innerHTML = '<div style="padding:24px;font-size:18px">Nepavyko įkelti žemėlapio. Patikrinkite interneto ryšį ir perkraukite puslapį.</div>';
+    return;
+  }
+
+  /* ---------- Žemėlapis ---------- */
+  const map = L.map("map", { zoomControl:false, tap:true }).setView(MAP_CENTER, MAP_ZOOM);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+  }).addTo(map);
+
+  if (store.get("lightMap", false)) document.body.classList.remove("dark-map");
+  $("btnTheme").onclick = () => {
+    document.body.classList.toggle("dark-map");
+    store.set("lightMap", !document.body.classList.contains("dark-map"));
+  };
+
+  let boundary = GAME_BOUNDARY.map(p => p.slice());
+  let zones = FORBIDDEN_ZONES.map(z => ({ name: z.name, coords: z.coords.map(p => p.slice()) }));
+  const WORLD = [[85,-180],[85,180],[-85,180],[-85,-180]];
+  const gameLayer = L.layerGroup().addTo(map);
+  let boundaryPoly = null;
+
+  function drawGame(){
+    gameLayer.clearLayers();
+    if (boundary.length >= 3) {
+      L.polygon([WORLD, boundary], { stroke:false, fillColor:"#000", fillOpacity:.55, interactive:false }).addTo(gameLayer);
+      boundaryPoly = L.polygon(boundary, { color:"#ff3b3b", weight:4, fillColor:"#ff3b3b", fillOpacity:.06, interactive:false }).addTo(gameLayer);
+    }
+    zones.forEach(z => {
+      if (z.coords.length < 3) return;
+      L.polygon(z.coords, { color:"#ffad33", weight:3, dashArray:"8 6", fillColor:"#ffad33", fillOpacity:.3 })
+        .bindTooltip("⛔ " + z.name, { sticky:true }).addTo(gameLayer);
+    });
+    renderZoneList();
+  }
+  function fitGame(){ if (boundary.length >= 3) map.fitBounds(L.polygon(boundary).getBounds(), { padding:[30,30] }); }
+  drawGame();
+  $("btnFit").onclick = fitGame;
+
+  /* ---------- Geometrija ---------- */
+  function inPoly(lat, lng, poly){
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const yi = poly[i][0], xi = poly[i][1], yj = poly[j][0], xj = poly[j][1];
+      if (((yi > lat) !== (yj > lat)) && (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi)) inside = !inside;
+    }
+    return inside;
+  }
+  // Atstumas metrais nuo taško iki artimiausios poligono kraštinės
+  function distToEdge(lat, lng, poly){
+    const kx = Math.cos(lat * Math.PI / 180) * 111320, ky = 110540;
+    let best = Infinity;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const ax = (poly[j][1] - lng) * kx, ay = (poly[j][0] - lat) * ky;
+      const bx = (poly[i][1] - lng) * kx, by = (poly[i][0] - lat) * ky;
+      const dx = bx - ax, dy = by - ay, len = dx*dx + dy*dy;
+      let t = len ? -(ax*dx + ay*dy) / len : 0; t = Math.max(0, Math.min(1, t));
+      const px = ax + t*dx, py = ay + t*dy;
+      best = Math.min(best, Math.hypot(px, py));
+    }
+    return best;
+  }
+  const fmtM = m => m >= 1000 ? (m/1000).toFixed(2).replace(".", ",") + " km" : Math.round(m) + " m";
+
+  /* ---------- Garsas ir vibracija ---------- */
+  let audioCtx = null;
+  function unlockAudio(){
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === "suspended") audioCtx.resume();
+    } catch(e){}
+  }
+  function beep(pattern){
+    unlockAudio(); if (!audioCtx) return;
+    let t = audioCtx.currentTime + .05;
+    pattern.forEach(([freq, dur, gap]) => {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = "square"; o.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.35, t + .02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g).connect(audioCtx.destination); o.start(t); o.stop(t + dur + .05);
+      t += dur + (gap || .08);
+    });
+  }
+  const vibrate = p => { try { navigator.vibrate && navigator.vibrate(p); } catch(e){} };
+  const SOUND_END = [[880,.35],[660,.35],[880,.35],[660,.35],[1046,.8]];
+  const SOUND_WARN = [[440,.25,.1],[440,.25]];
+  const SOUND_MIN = [[700,.15,.1],[700,.15]];
+  document.addEventListener("pointerdown", unlockAudio, { once:true });
+
+  /* ---------- GPS ---------- */
+  let watchId = null, meMarker = null, accCircle = null, lastPos = null, firstFix = true;
+  let lastAlarmBuzz = 0, wakeLock = null;
+  const meIcon = cls => L.divIcon({ className:"", html:'<div class="me-dot ' + cls + '"></div>', iconSize:[20,20], iconAnchor:[10,10] });
+
+  async function keepAwake(){
+    try { if ("wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen"); } catch(e){}
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && (watchId !== null || timer.phase !== "idle")) keepAwake();
+    if (document.visibilityState === "visible") tick();
+  });
+
+  function startGPS(){
+    if (!("geolocation" in navigator)) { toast("Šis naršyklė nepalaiko GPS"); return; }
+    unlockAudio(); keepAwake();
+    firstFix = true;
+    $("zoneText").textContent = "Ieškoma GPS…";
+    watchId = navigator.geolocation.watchPosition(onPos, onPosErr, { enableHighAccuracy:true, maximumAge:3000, timeout:20000 });
+    $("navLocate").classList.add("active");
+    store.set("gpsOn", true);
+  }
+  function stopGPS(){
+    if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+    watchId = null; lastPos = null;
+    if (meMarker) { map.removeLayer(meMarker); map.removeLayer(accCircle); meMarker = accCircle = null; }
+    $("navLocate").classList.remove("active");
+    $("zoneText").textContent = "GPS išjungtas"; $("zoneText").className = ""; $("zoneLabel").textContent = "Vieta";
+    $("alarm").classList.remove("show");
+    store.set("gpsOn", false);
+  }
+  function onPosErr(err){
+    const msg = err.code === 1 ? "Leidimas GPS nesuteiktas. Įjunkite vietos leidimą naršyklėje."
+              : err.code === 2 ? "Nepavyksta nustatyti vietos" : "GPS neatsako, bandoma toliau…";
+    $("zoneText").textContent = err.code === 1 ? "Nėra leidimo" : "GPS klaida";
+    toast(msg, 4000);
+    if (err.code === 1) stopGPS();
+  }
+  function onPos(pos){
+    const lat = pos.coords.latitude, lng = pos.coords.longitude, acc = pos.coords.accuracy;
+    lastPos = [lat, lng];
+    if (!meMarker) {
+      accCircle = L.circle(lastPos, { radius:acc, color:"#4da3ff", weight:1, fillOpacity:.12, interactive:false }).addTo(map);
+      meMarker = L.marker(lastPos, { icon:meIcon(""), interactive:false, zIndexOffset:1000 }).addTo(map);
+    } else { meMarker.setLatLng(lastPos); accCircle.setLatLng(lastPos).setRadius(acc); }
+    if (firstFix) { map.setView(lastPos, Math.max(map.getZoom(), 16)); firstFix = false; }
+    evaluate(lat, lng, acc);
+  }
+
+  function evaluate(lat, lng, acc){
+    const zt = $("zoneText"), zl = $("zoneLabel");
+    if (boundary.length < 3) { zt.textContent = "Riba nenustatyta"; return; }
+    const inside = inPoly(lat, lng, boundary);
+    const d = distToEdge(lat, lng, boundary);
+    const forbidden = zones.find(z => z.coords.length >= 3 && inPoly(lat, lng, z.coords));
+    zl.textContent = "Tikslumas ±" + Math.round(acc) + " m";
+
+    let alarm = null;
+    if (!inside) {
+      zt.textContent = "UŽ RIBOS · " + fmtM(d); zt.className = "bad";
+      alarm = ["⚠️ UŽ ŽAIDIMO RIBOS!", "Grįžk atgal – iki ribos " + fmtM(d)];
+    } else if (forbidden) {
+      zt.textContent = "Draudžiama zona!"; zt.className = "bad";
+      alarm = ["⛔ DRAUDŽIAMA ZONA", forbidden.name + " – pasitrauk"];
+    } else {
+      zt.textContent = "Iki ribos " + fmtM(d); zt.className = d < NEAR_BOUNDARY_M ? "near" : "ok";
+    }
+    meMarker && meMarker.setIcon(meIcon(alarm ? "out" : ""));
+
+    const al = $("alarm");
+    if (alarm) {
+      $("alarmTitle").textContent = alarm[0]; $("alarmSub").textContent = alarm[1];
+      const wasShown = al.classList.contains("show");
+      al.classList.add("show");
+      const now = Date.now();
+      if (!wasShown || now - lastAlarmBuzz > 5000) {
+        lastAlarmBuzz = now; vibrate([400,150,400,150,400]); beep(SOUND_WARN);
+      }
+    } else al.classList.remove("show");
+  }
+
+  $("navLocate").onclick = () => watchId === null ? startGPS() : stopGPS();
+  $("btnCenter").onclick = () => {
+    if (lastPos) map.setView(lastPos, Math.max(map.getZoom(), 16));
+    else if (watchId === null) startGPS();
+    else toast("Laukiama GPS signalo…");
+  };
+  if (store.get("gpsOn", false)) startGPS();
+
+  /* ---------- Lapai ---------- */
+  let openSheet = null;
+  function showSheet(name){
+    document.querySelectorAll(".sheet").forEach(s => s.classList.remove("open"));
+    document.querySelectorAll("[data-sheet]").forEach(b => b.classList.toggle("active", b.dataset.sheet === name && openSheet !== name));
+    if (openSheet === name || !name) { openSheet = null; return; }
+    $("sheet-" + name).classList.add("open"); openSheet = name;
+    if (name === "edit") setEditing(true);
+  }
+  document.querySelectorAll("[data-sheet]").forEach(b => b.onclick = () => showSheet(b.dataset.sheet));
+  document.querySelectorAll("[data-close]").forEach(b => b.onclick = () => showSheet(null));
+  $("rulesText").textContent = RULES_TEXT;
+
+  /* ---------- Laikmatis ---------- */
+  const timer = Object.assign({ phase:"idle", endAt:0, hideMin:DEFAULT_HIDE_MIN, seekMin:DEFAULT_SEEK_MIN, minWarned:false }, store.get("timer", {}));
+  $("hideMin").value = timer.hideMin; $("seekMin").value = timer.seekMin;
+  const fmtT = ms => { const s = Math.max(0, Math.ceil(ms/1000)); const h = Math.floor(s/3600), m = Math.floor(s%3600/60), x = s%60;
+    return (h ? h + ":" + String(m).padStart(2,"0") : String(m).padStart(2,"0")) + ":" + String(x).padStart(2,"0"); };
+  const PHASE_NAME = { idle:"Neprasidėjęs", hide:"Slėpimasis", seek:"Paieška", done:"Žaidimas baigtas" };
+  const saveTimer = () => store.set("timer", timer);
+
+  function setPhase(p, silent){
+    timer.phase = p; timer.minWarned = false;
+    if (p === "hide") timer.endAt = Date.now() + timer.hideMin * 60000;
+    if (p === "seek") timer.endAt = (timer.endAt && timer.endAt < Date.now() ? timer.endAt : Date.now()) + timer.seekMin * 60000;
+    saveTimer();
+    if (!silent && p === "seek") { beep(SOUND_END); vibrate([600,200,600,200,600]); toast("🔎 Slėpimasis baigėsi – ieškotojai, pirmyn!", 5000); }
+    if (!silent && p === "done") { beep(SOUND_END.concat(SOUND_END)); vibrate([800,200,800,200,800,200,800]); toast("🏁 Laikas baigėsi! Visi grįžta į startą.", 8000); }
+    renderTimer();
+  }
+  function tick(){
+    if (timer.phase === "hide" || timer.phase === "seek") {
+      const left = timer.endAt - Date.now();
+      if (left <= 60000 && left > 0 && !timer.minWarned && (timer.phase === "seek" ? timer.seekMin : timer.hideMin) > 1) {
+        timer.minWarned = true; saveTimer(); beep(SOUND_MIN); vibrate(200); toast("Liko 1 minutė", 3000);
+      }
+      if (left <= 0) {
+        if (timer.phase === "hide") {
+          // jei puslapis buvo uždarytas ilgiau nei paieškos laikas – iškart baigti
+          const seekEnd = timer.endAt + timer.seekMin * 60000;
+          if (seekEnd <= Date.now()) { timer.endAt = seekEnd; setPhase("done"); }
+          else setPhase("seek");
+        } else setPhase("done");
+      }
+    }
+    renderTimer();
+  }
+  function renderTimer(){
+    const running = timer.phase === "hide" || timer.phase === "seek";
+    const left = running ? timer.endAt - Date.now() : 0;
+    const txt = running ? fmtT(left) : timer.phase === "done" ? "00:00" : fmtT(timer.hideMin * 60000);
+    $("bigTime").textContent = txt; $("phaseText").textContent = PHASE_NAME[timer.phase];
+    $("timerText").textContent = running || timer.phase === "done" ? txt : "--:--";
+    $("timerLabel").textContent = timer.phase === "idle" ? "Laikmatis" : PHASE_NAME[timer.phase];
+    $("timerChip").className = "chip " + (running ? timer.phase : "");
+    $("timerSetup").style.display = running ? "none" : "block";
+    $("timerRunning").style.display = running ? "block" : "none";
+    $("btnSkip").textContent = timer.phase === "hide" ? "⏭ Pradėti paiešką dabar" : "⏭ Baigti žaidimą dabar";
+    $("btnStart").textContent = timer.phase === "done" ? "↻ Pradėti iš naujo" : "▶ Pradėti žaidimą";
+  }
+  $("btnStart").onclick = () => {
+    const h = Math.max(0, parseFloat($("hideMin").value) || 0), s = Math.max(1, parseFloat($("seekMin").value) || DEFAULT_SEEK_MIN);
+    timer.hideMin = h; timer.seekMin = s; unlockAudio(); keepAwake(); beep([[880,.12]]);
+    if (h > 0) setPhase("hide", true); else { timer.endAt = 0; setPhase("seek", true); }
+  };
+  $("btnSkip").onclick = () => {
+    if (timer.phase === "hide") { timer.endAt = 0; setPhase("seek"); }
+    else if (confirm("Baigti žaidimą dabar?")) setPhase("done");
+  };
+  $("btnStop").onclick = () => { if (confirm("Sustabdyti laikmatį?")) setPhase("idle", true); };
+  $("btnTestSound").onclick = () => { unlockAudio(); beep(SOUND_END); vibrate([300,100,300]); };
+  $("timerChip").onclick = () => showSheet("timer");
+  setInterval(tick, 500); tick();
+
+  /* ---------- Redagavimas ---------- */
+  let editing = false, editTarget = "boundary";
+  let draft = store.get("draft", { boundary:[], zone:[] });
+  const draftLayer = L.layerGroup().addTo(map);
+  const vtxIcon = first => L.divIcon({ className:"", html:'<div class="vtx' + (first ? " first" : "") + '"></div>', iconSize:[22,22], iconAnchor:[11,11] });
+  const pts = () => draft[editTarget];
+  const saveDraft = () => store.set("draft", draft);
+
+  function setEditing(on){
+    editing = on; document.body.classList.toggle("editing", on);
+    redrawDraft();
+  }
+  function redrawDraft(){
+    draftLayer.clearLayers();
+    if (!editing) return;
+    const p = pts(), color = editTarget === "boundary" ? "#4da3ff" : "#ffad33";
+    let shape = null;
+    if (p.length >= 3) shape = L.polygon(p, { color, weight:3, fillOpacity:.15, interactive:false });
+    else if (p.length === 2) shape = L.polyline(p, { color, weight:3, interactive:false });
+    if (shape) shape.addTo(draftLayer);
+    p.forEach((pt, i) => {
+      const m = L.marker(pt, { icon:vtxIcon(i === 0), draggable:true, zIndexOffset:2000 }).addTo(draftLayer);
+      m.on("drag", e => { const ll = e.target.getLatLng(); p[i] = [ll.lat, ll.lng]; if (shape) shape.setLatLngs(p); });
+      m.on("dragend", saveDraft);
+    });
+    $("draftInfo").textContent = "Taškų: " + p.length + (p.length < 3 ? " (reikia bent 3)" : "");
+  }
+  map.on("click", e => {
+    if (!editing) return;
+    pts().push([+e.latlng.lat.toFixed(6), +e.latlng.lng.toFixed(6)]);
+    saveDraft(); redrawDraft();
+  });
+  document.querySelectorAll("#editTarget button").forEach(b => b.onclick = () => {
+    editTarget = b.dataset.t;
+    document.querySelectorAll("#editTarget button").forEach(x => x.classList.toggle("on", x === b));
+    $("zoneNameWrap").style.display = editTarget === "zone" ? "block" : "none";
+    $("btnLoadCurrent").style.display = editTarget === "boundary" ? "block" : "none";
+    $("copyOut").value = ""; redrawDraft();
+  });
+  $("btnUndo").onclick = () => { pts().pop(); saveDraft(); redrawDraft(); };
+  $("btnClear").onclick = () => { if (!pts().length || confirm("Ištrinti visus taškus?")) { draft[editTarget] = []; saveDraft(); redrawDraft(); } };
+  $("btnLoadCurrent").onclick = () => { draft.boundary = boundary.map(p => p.slice()); saveDraft(); redrawDraft(); toast("Esama riba įkelta – tempkite taškus"); };
+  $("btnApply").onclick = () => {
+    const p = pts();
+    if (p.length < 3) { toast("Reikia bent 3 taškų"); return; }
+    if (editTarget === "boundary") { boundary = p.map(x => x.slice()); toast("Riba pritaikyta (tik šiame įrenginyje)"); }
+    else {
+      zones.push({ name: $("zoneName").value.trim() || "Draudžiama zona " + (zones.length + 1), coords: p.map(x => x.slice()) });
+      draft.zone = []; $("zoneName").value = ""; saveDraft(); toast("Zona pridėta (tik šiame įrenginyje)");
+    }
+    drawGame(); redrawDraft(); if (lastPos) evaluate(lastPos[0], lastPos[1], accCircle ? accCircle.getRadius() : 0);
+  };
+  const fmtPts = (arr, ind) => arr.map(p => ind + "[" + p[0].toFixed(5) + ", " + p[1].toFixed(5) + "],").join("\n");
+  function buildCode(){
+    if (editTarget === "boundary") {
+      const p = pts().length >= 3 ? pts() : boundary;
+      return "const GAME_BOUNDARY = [\n" + fmtPts(p, "  ") + "\n];";
+    }
+    const all = zones.slice();
+    if (pts().length >= 3) all.push({ name: $("zoneName").value.trim() || "Nauja zona", coords: pts() });
+    return "const FORBIDDEN_ZONES = [\n" + all.map(z =>
+      "  {\n    name: " + JSON.stringify(z.name) + ",\n    coords: [\n" + fmtPts(z.coords, "      ") + "\n    ],\n  },").join("\n") + "\n];";
+  }
+  $("btnCopy").onclick = async () => {
+    const code = buildCode(), out = $("copyOut");
+    out.value = code;
+    try { await navigator.clipboard.writeText(code); toast("✅ Nukopijuota!"); }
+    catch(e) {
+      out.focus(); out.select();
+      try { document.execCommand("copy"); toast("✅ Nukopijuota!"); } catch(e2) { toast("Pažymėkite tekstą ir nukopijuokite rankiniu būdu"); }
+    }
+  };
+  function renderZoneList(){
+    const el = $("zoneList"); el.innerHTML = "";
+    if (!zones.length) return;
+    const h = document.createElement("p"); h.className = "hint"; h.textContent = "Esamos draudžiamos zonos:"; el.appendChild(h);
+    zones.forEach((z, i) => {
+      const row = document.createElement("div"); row.className = "zone-item";
+      const s = document.createElement("span"); s.textContent = "⛔ " + z.name;
+      const b = document.createElement("button"); b.textContent = "Šalinti";
+      b.onclick = () => { if (confirm("Pašalinti „" + z.name + "“?")) { zones.splice(i, 1); drawGame(); } };
+      row.append(s, b); el.appendChild(row);
+    });
+  }
+  renderZoneList();
+  $("btnExitEdit").onclick = () => { setEditing(false); showSheet(null); };
+
+  /* Paleidimo patarimas, jei puslapis atidarytas ne per https */
+  if (location.protocol === "file:") toast("GPS veikia tik per https (pvz. GitHub Pages)", 4000);
+  else setTimeout(fitGame, 50);
+})();
+</script>
+</body>
+</html>
