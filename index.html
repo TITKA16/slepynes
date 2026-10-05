@@ -47,6 +47,14 @@ const DEFAULT_SEEK_MIN = 60;
 // Kai iki ribos liko mažiau nei tiek metrų – rodomas oranžinis perspėjimas
 const NEAR_BOUNDARY_M = 30;
 
+// Ieškotojo vietos dalijimasis (per nemokamą ntfy.sh, paskyros nereikia).
+// Ieškotojo telefonas siunčia savo vietą, slėpėjų telefonai tik gauna – jų vieta niekur nesiunčiama.
+// Kanalo pavadinimas – kaip slaptažodis: kas jį žino, tas mato ieškotoją.
+const SHARE_TOPIC = "veisiejai-slepynes-k7r29xq4";
+const SEEKER_SEND_EVERY_S = 8;   // kas kiek sekundžių ieškotojas siunčia vietą
+const SEEKER_STALE_S = 90;       // po tiek sekundžių be naujos vietos – žymima kaip sena
+const SEEKER_NEAR_M = 50;        // slėpėjui rodomas raudonas perspėjimas, kai ieškotojas arčiau nei tiek
+
 // Žemėlapio centras ir priartinimas
 const MAP_CENTER = [54.101, 23.696];
 const MAP_ZOOM = 15;
@@ -163,6 +171,16 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
   .me-dot{width:20px;height:20px;border-radius:50%;background:var(--accent);border:3px solid #fff;
     box-shadow:0 0 0 6px rgba(77,163,255,.3)}
   .me-dot.out{background:var(--danger);box-shadow:0 0 0 6px rgba(255,77,77,.35)}
+  .seeker-dot{width:34px;height:34px;border-radius:50%;background:#b026ff;border:3px solid #fff;
+    display:flex;align-items:center;justify-content:center;font-size:17px;box-shadow:0 0 0 7px rgba(176,38,255,.3)}
+  .seeker-dot.stale{opacity:.45;filter:grayscale(.7)}
+  #seekerChip{position:fixed;left:8px;right:64px;top:calc(72px + var(--safe-t));z-index:999;display:none;
+    background:rgba(24,27,34,.92);border:1px solid #6d2a99;border-radius:12px;padding:8px 12px;font-weight:700;font-size:15px}
+  #seekerChip.show{display:block} #seekerChip.close{background:rgba(120,20,20,.95);border-color:var(--danger)}
+  body.editing #seekerChip{display:none}
+  #roleChip{min-width:0;padding:8px 10px;cursor:pointer}
+  #roleChip b{font-size:22px}
+  .roleinfo{background:#0f1115;border:1px solid var(--line);border-radius:12px;padding:10px 12px;color:var(--muted);font-size:14px;margin:8px 0 14px}
   .vtx{width:22px;height:22px;border-radius:50%;background:#fff;border:3px solid var(--accent)}
   .vtx.first{border-color:var(--ok);background:var(--ok)}
 </style>
@@ -172,6 +190,7 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
 <div id="map"></div>
 
 <div id="topbar">
+  <div class="chip" id="roleChip" title="Vaidmuo"><small>Aš</small><b id="roleIcon">🙈</b></div>
   <div class="chip" id="zoneChip"><small id="zoneLabel">Vieta</small><b id="zoneText">GPS išjungtas</b></div>
   <div class="chip" id="timerChip"><small id="timerLabel">Laikmatis</small><b id="timerText">--:--</b></div>
 </div>
@@ -182,6 +201,7 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
   <button class="round" id="btnTheme" title="Šviesus / tamsus žemėlapis">🌓</button>
 </div>
 
+<div id="seekerChip"></div>
 <div id="editBanner">✏️ Spauskite žemėlapį – pridėsite tašką</div>
 
 <div id="alarm"><div id="alarmBox"><span id="alarmTitle">⚠️ UŽ RIBOS!</span><small id="alarmSub">Grįžk atgal</small></div></div>
@@ -189,7 +209,14 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
 
 <!-- Laikmatis -->
 <section class="sheet" id="sheet-timer">
-  <h2>⏱ Laikmatis <button class="x" data-close>×</button></h2>
+  <h2>⏱ Žaidimas <button class="x" data-close>×</button></h2>
+  <div class="seg" id="roleSeg">
+    <button data-r="hider">🙈 Slėpėjas</button>
+    <button data-r="seeker">🔎 Ieškotojas</button>
+  </div>
+  <label class="field" id="seekerNameWrap" style="display:none">Tavo vardas (matys slėpėjai)
+    <input type="text" id="seekerName" maxlength="20" placeholder="pvz. Tomas" style="font-size:17px"></label>
+  <div class="roleinfo" id="roleInfo"></div>
   <div class="phase" id="phaseText">Neprasidėjęs</div>
   <div class="bigtime" id="bigTime">00:00</div>
   <div id="timerSetup">
@@ -228,17 +255,19 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
     <button class="btn" id="btnClear">🗑 Išvalyti</button>
   </div>
   <button class="btn" id="btnLoadCurrent">📥 Įkelti esamą ribą redagavimui</button>
-  <button class="btn primary" id="btnApply">✔ Pritaikyti žemėlapyje</button>
-  <button class="btn primary" id="btnCopy">📋 Kopijuoti koordinates</button>
-  <textarea id="copyOut" readonly placeholder="Čia atsiras kodas, kurį reikia įklijuoti į index.html viršų"></textarea>
-  <p class="hint">Nukopijuotą tekstą įklijuokite <b>index.html</b> faile vietoje <code>const GAME_BOUNDARY = [...]</code> arba <code>const FORBIDDEN_ZONES = [...]</code>. Pakeitimai žemėlapyje be kodo pakeitimo matomi tik jums ir dingsta perkrovus puslapį.</p>
+  <button class="btn primary" id="btnApply">✔ Išsaugoti</button>
+  <button class="btn primary" id="btnShare">🔗 Siųsti nuorodą draugams</button>
+  <p class="hint">1) Nubrėžkite ribą ir spauskite <b>Išsaugoti</b>. 2) Spauskite <b>Siųsti nuorodą draugams</b> – nuorodoje bus jūsų riba ir draudžiamos zonos. Kas ją atidarys, matys tą pačią ribą (telefonas ją įsimins).</p>
   <div id="zoneList"></div>
+  <button class="btn" id="btnReset">↺ Grąžinti numatytąją ribą</button>
+  <button class="btn" id="btnCopy">📋 Kopijuoti koordinates (kodui)</button>
+  <textarea id="copyOut" readonly placeholder="Kodas programuotojui (nebūtina)"></textarea>
   <button class="btn danger" id="btnExitEdit">Baigti redagavimą</button>
 </section>
 
 <nav id="bottombar">
   <button class="navbtn" id="navLocate"><span>📍</span>Mano vieta</button>
-  <button class="navbtn" data-sheet="timer"><span>⏱</span>Laikmatis</button>
+  <button class="navbtn" data-sheet="timer"><span>⏱</span>Žaidimas</button>
   <button class="navbtn" data-sheet="rules"><span>📜</span>Taisyklės</button>
   <button class="navbtn" data-sheet="edit"><span>✏️</span>Redaguoti</button>
 </nav>
@@ -274,8 +303,35 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
     store.set("lightMap", !document.body.classList.contains("dark-map"));
   };
 
-  let boundary = GAME_BOUNDARY.map(p => p.slice());
-  let zones = FORBIDDEN_ZONES.map(z => ({ name: z.name, coords: z.coords.map(p => p.slice()) }));
+  /* Ribą galima perduoti nuoroda: ...#r=lat,lng_lat,lng&z=Pavadinimas~lat,lng_...!...
+     Atidarius tokią nuorodą, riba įsimenama šiame telefone. */
+  const ptsToStr = pts => pts.map(p => p[0].toFixed(5) + "," + p[1].toFixed(5)).join("_");
+  const strToPts = s => s.split("_").map(x => x.split(",").map(Number)).filter(p => p.length === 2 && isFinite(p[0]) && isFinite(p[1]));
+  const encName = n => encodeURIComponent(n).replace(/[!~_'()*]/g, c => "%" + c.charCodeAt(0).toString(16).toUpperCase());
+  function encodeGame(b, zs){
+    let h = "r=" + ptsToStr(b);
+    if (zs.length) h += "&z=" + zs.map(z => encName(z.name) + "~" + ptsToStr(z.coords)).join("!");
+    return h;
+  }
+  function decodeGame(h){
+    const out = {};
+    h.replace(/^#/, "").split("&").forEach(kv => {
+      const i = kv.indexOf("="); if (i < 0) return;
+      const k = kv.slice(0, i), v = kv.slice(i + 1);
+      if (k === "r") out.boundary = strToPts(v);
+      if (k === "z") out.zones = v ? v.split("!").map(s => { const [n, p] = s.split("~");
+        return { name: decodeURIComponent(n || "Draudžiama zona"), coords: strToPts(p || "") }; }).filter(z => z.coords.length >= 3) : [];
+    });
+    return out.boundary && out.boundary.length >= 3 ? { boundary: out.boundary, zones: out.zones || [] } : null;
+  }
+  let fromLink = null;
+  try { fromLink = decodeGame(location.hash); } catch(e) {}
+  if (fromLink) store.set("customGame", fromLink);
+  const custom = fromLink || store.get("customGame", null);
+  let boundary = custom ? custom.boundary : GAME_BOUNDARY.map(p => p.slice());
+  let zones = custom ? custom.zones : FORBIDDEN_ZONES.map(z => ({ name: z.name, coords: z.coords.map(p => p.slice()) }));
+  const saveCustom = () => store.set("customGame", { boundary, zones });
+  const shareUrl = () => location.origin + location.pathname + "#" + encodeGame(boundary, zones);
   const WORLD = [[85,-180],[85,180],[-85,180],[-85,-180]];
   const gameLayer = L.layerGroup().addTo(map);
   let boundaryPoly = null;
@@ -396,6 +452,8 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
     } else { meMarker.setLatLng(lastPos); accCircle.setLatLng(lastPos).setRadius(acc); }
     if (firstFix) { map.setView(lastPos, Math.max(map.getZoom(), 16)); firstFix = false; }
     evaluate(lat, lng, acc);
+    if (role === "seeker") sendSeekerPos(lat, lng, acc);
+    else renderSeekers();
   }
 
   function evaluate(lat, lng, acc){
@@ -436,6 +494,99 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
     else if (watchId === null) startGPS();
     else toast("Laukiama GPS signalo…");
   };
+  /* ---------- Vaidmuo ir ieškotojo vietos dalijimasis ---------- */
+  // Ieškotojas TIK siunčia, slėpėjas TIK gauna. Slėpėjo vieta niekur nesiunčiama.
+  const NTFY = "https://ntfy.sh/" + encodeURIComponent(SHARE_TOPIC);
+  let role = store.get("role", "hider");
+  const deviceId = store.get("deviceId", null) || Math.random().toString(36).slice(2, 10);
+  store.set("deviceId", deviceId);
+  $("seekerName").value = store.get("seekerName", "");
+  let lastSent = 0, sendFails = 0, es = null;
+  const seekers = {};   // id -> { name, lat, lng, t, marker }
+  const seekerIcon = stale => L.divIcon({ className:"", html:'<div class="seeker-dot' + (stale ? " stale" : "") + '">🔎</div>', iconSize:[34,34], iconAnchor:[17,17] });
+
+  function sendSeekerPos(lat, lng, acc){
+    const now = Date.now();
+    if (now - lastSent < SEEKER_SEND_EVERY_S * 1000) return;
+    lastSent = now;
+    const body = JSON.stringify({ id:deviceId, name:($("seekerName").value.trim() || "Ieškotojas"),
+      lat:+lat.toFixed(6), lng:+lng.toFixed(6), acc:Math.round(acc), t:now });
+    fetch(NTFY, { method:"POST", body })
+      .then(r => { if (!r.ok) throw 0; sendFails = 0; renderRoleInfo(); })
+      .catch(() => { sendFails++; renderRoleInfo(); });
+  }
+  function onShareMsg(ev){
+    let d; try { d = JSON.parse(JSON.parse(ev.data).message); } catch(e) { return; }
+    if (!d || !d.id || typeof d.lat !== "number" || typeof d.lng !== "number" || d.id === deviceId) return;
+    const s = seekers[d.id] || (seekers[d.id] = {});
+    if (s.t && d.t <= s.t) return;
+    Object.assign(s, { name:String(d.name || "Ieškotojas").slice(0, 20), lat:d.lat, lng:d.lng, t:d.t });
+    renderSeekers();
+  }
+  function subscribe(){
+    if (es || role !== "hider") return;
+    try {
+      es = new EventSource(NTFY + "/sse?since=" + Math.max(1, Math.ceil(SEEKER_STALE_S / 60)) + "m");
+      es.onmessage = onShareMsg;
+      es.onopen = () => renderRoleInfo();
+      es.onerror = () => renderRoleInfo();
+    } catch(e) {}
+  }
+  function unsubscribe(){
+    if (es) { es.close(); es = null; }
+    Object.keys(seekers).forEach(k => { if (seekers[k].marker) map.removeLayer(seekers[k].marker); delete seekers[k]; });
+    renderSeekers();
+  }
+  const ago = ms => { const s = Math.max(0, Math.round(ms / 1000)); return s < 60 ? s + " s" : Math.floor(s / 60) + " min"; };
+  function renderSeekers(){
+    const chip = $("seekerChip");
+    if (role !== "hider") { chip.className = ""; return; }
+    let best = null;
+    Object.values(seekers).forEach(s => {
+      const age = Date.now() - s.t, stale = age > SEEKER_STALE_S * 1000;
+      if (age > 30 * 60000) { if (s.marker) map.removeLayer(s.marker); s.marker = null; return; }
+      if (!s.marker) s.marker = L.marker([s.lat, s.lng], { icon:seekerIcon(stale), zIndexOffset:900 }).addTo(map);
+      else { s.marker.setLatLng([s.lat, s.lng]); s.marker.setIcon(seekerIcon(stale)); }
+      s.marker.unbindTooltip().bindTooltip("🔎 " + s.name + " · prieš " + ago(age));
+      const dist = lastPos ? L.latLng(lastPos).distanceTo([s.lat, s.lng]) : null;
+      if (!best || (dist !== null && (best.dist === null || dist < best.dist))) best = { s, dist, age, stale };
+    });
+    if (!best) { chip.className = ""; return; }
+    chip.textContent = "🔎 " + best.s.name + (best.dist !== null ? " · " + fmtM(best.dist) : "") +
+      " · prieš " + ago(best.age) + (best.stale ? " (sena)" : "");
+    chip.className = "show" + (best.dist !== null && best.dist < SEEKER_NEAR_M && !best.stale ? " close" : "");
+  }
+  function renderRoleInfo(){
+    $("roleIcon").textContent = role === "seeker" ? "🔎" : "🙈";
+    document.querySelectorAll("#roleSeg button").forEach(b => b.classList.toggle("on", b.dataset.r === role));
+    $("seekerNameWrap").style.display = role === "seeker" ? "block" : "none";
+    let t;
+    if (role === "seeker") {
+      t = "📡 Tavo vieta siunčiama slėpėjams kas " + SEEKER_SEND_EVERY_S + " s, kai įjungta „Mano vieta“. Slėpėjų vietos tu nematai.";
+      if (watchId === null) t += " ⚠️ Įjunk „📍 Mano vieta“, kitaip slėpėjai tavęs nematys.";
+      else if (sendFails) t += " ⚠️ Nepavyksta išsiųsti – patikrink internetą.";
+      else if (lastSent) t += " ✅ Paskutinį kartą išsiųsta prieš " + ago(Date.now() - lastSent) + ".";
+    } else {
+      t = "👀 Matai ieškotoją žemėlapyje (violetinis 🔎). Tavo vieta niekur nesiunčiama.";
+      if (es && es.readyState === 2) t += " ⚠️ Nėra ryšio – bandoma iš naujo.";
+    }
+    $("roleInfo").textContent = t;
+  }
+  function setRole(r){
+    role = r; store.set("role", r);
+    if (r === "hider") subscribe(); else { unsubscribe(); lastSent = 0; if (lastPos) sendSeekerPos(lastPos[0], lastPos[1], accCircle ? accCircle.getRadius() : 50); }
+    renderRoleInfo(); renderSeekers();
+  }
+  document.querySelectorAll("#roleSeg button").forEach(b => b.onclick = () => {
+    if (b.dataset.r === role) return;
+    if (b.dataset.r === "seeker" && !confirm("Tapti ieškotoju? Tavo vieta bus rodoma slėpėjams.")) return;
+    setRole(b.dataset.r);
+  });
+  $("seekerName").oninput = () => store.set("seekerName", $("seekerName").value);
+  $("roleChip").onclick = () => showSheet("timer");
+  setInterval(() => { renderSeekers(); if (openSheet === "timer") renderRoleInfo(); }, 5000);
+  setRole(role);
+
   if (store.get("gpsOn", false)) startGPS();
 
   /* ---------- Lapai ---------- */
@@ -557,11 +708,12 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
   $("btnApply").onclick = () => {
     const p = pts();
     if (p.length < 3) { toast("Reikia bent 3 taškų"); return; }
-    if (editTarget === "boundary") { boundary = p.map(x => x.slice()); toast("Riba pritaikyta (tik šiame įrenginyje)"); }
+    if (editTarget === "boundary") { boundary = p.map(x => x.slice()); draft.boundary = []; saveDraft(); toast("✅ Riba išsaugota. Dabar – „Siųsti nuorodą draugams“", 3500); }
     else {
       zones.push({ name: $("zoneName").value.trim() || "Draudžiama zona " + (zones.length + 1), coords: p.map(x => x.slice()) });
-      draft.zone = []; $("zoneName").value = ""; saveDraft(); toast("Zona pridėta (tik šiame įrenginyje)");
+      draft.zone = []; $("zoneName").value = ""; saveDraft(); toast("✅ Zona išsaugota");
     }
+    saveCustom(); history.replaceState(null, "", "#" + encodeGame(boundary, zones));
     drawGame(); redrawDraft(); if (lastPos) evaluate(lastPos[0], lastPos[1], accCircle ? accCircle.getRadius() : 0);
   };
   const fmtPts = (arr, ind) => arr.map(p => ind + "[" + p[0].toFixed(5) + ", " + p[1].toFixed(5) + "],").join("\n");
@@ -592,11 +744,35 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
       const row = document.createElement("div"); row.className = "zone-item";
       const s = document.createElement("span"); s.textContent = "⛔ " + z.name;
       const b = document.createElement("button"); b.textContent = "Šalinti";
-      b.onclick = () => { if (confirm("Pašalinti „" + z.name + "“?")) { zones.splice(i, 1); drawGame(); } };
+      b.onclick = () => { if (confirm("Pašalinti „" + z.name + "“?")) { zones.splice(i, 1); saveCustom(); history.replaceState(null, "", "#" + encodeGame(boundary, zones)); drawGame(); } };
       row.append(s, b); el.appendChild(row);
     });
   }
   renderZoneList();
+  async function copyText(text){
+    try { await navigator.clipboard.writeText(text); return true; }
+    catch(e) {
+      const out = $("copyOut"); out.value = text; out.focus(); out.select();
+      try { return document.execCommand("copy"); } catch(e2) { return false; }
+    }
+  }
+  $("btnShare").onclick = async () => {
+    if (pts().length >= 3 && confirm("Yra neišsaugotų taškų. Išsaugoti juos prieš siunčiant?")) $("btnApply").click();
+    const url = shareUrl();
+    if (navigator.share) {
+      try { await navigator.share({ title:"Slėpynės Veisiejuose", text:"Slėpynių žemėlapis:", url }); return; }
+      catch(e) { if (e && e.name === "AbortError") return; }
+    }
+    toast(await copyText(url) ? "✅ Nuoroda nukopijuota – įklijuokite draugams" : "Nukopijuokite nuorodą iš laukelio apačioje", 3500);
+  };
+  $("btnReset").onclick = () => {
+    if (!confirm("Grąžinti numatytąją ribą ir zonas? Jūsų nubrėžta riba šiame telefone bus pamiršta.")) return;
+    store.del("customGame");
+    boundary = GAME_BOUNDARY.map(p => p.slice());
+    zones = FORBIDDEN_ZONES.map(z => ({ name: z.name, coords: z.coords.map(p => p.slice()) }));
+    history.replaceState(null, "", location.pathname);
+    drawGame(); fitGame(); toast("Grąžinta numatytoji riba");
+  };
   $("btnExitEdit").onclick = () => { setEditing(false); showSheet(null); };
 
   /* Paleidimo patarimas, jei puslapis atidarytas ne per https */
