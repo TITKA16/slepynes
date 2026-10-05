@@ -15,30 +15,11 @@
    ===================================================================== */
 
 // Žaidimo zonos riba: [platuma, ilguma] taškai iš eilės (poligonas užsidaro savaime).
-// Naują ribą nupieškite "Redaguoti" režimu ir įklijuokite vietoje šio masyvo.
-const GAME_BOUNDARY = [
-  [54.10820, 23.68480],
-  [54.10860, 23.69400],
-  [54.10700, 23.70300],
-  [54.10250, 23.70700],
-  [54.09650, 23.70450],
-  [54.09400, 23.69700],
-  [54.09550, 23.68750],
-  [54.10100, 23.68300],
-];
+// Tuščia = ribą nubrėžia žaidėjas pats "Redaguoti" režimu ir išsiunčia nuorodą draugams.
+const GAME_BOUNDARY = [];
 
 // Draudžiamos zonos (privačios teritorijos, vanduo ir pan.).
-const FORBIDDEN_ZONES = [
-  {
-    name: "Pavyzdinė zona (pakeiskite arba ištrinkite)",
-    coords: [
-      [54.10380, 23.69950],
-      [54.10400, 23.70180],
-      [54.10260, 23.70220],
-      [54.10240, 23.69980],
-    ],
-  },
-];
+const FORBIDDEN_ZONES = [];
 
 // Laikmačio numatytosios reikšmės (minutėmis)
 const DEFAULT_HIDE_MIN = 10;
@@ -777,6 +758,7 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
 
   /* Paleidimo patarimas, jei puslapis atidarytas ne per https */
   if (location.protocol === "file:") toast("GPS veikia tik per https (pvz. GitHub Pages)", 4000);
+  else if (boundary.length < 3) toast("Ribos dar nėra – nubrėžkite ją per ✏️ Redaguoti", 5000);
   else setTimeout(fitGame, 50);
 })();
 </script>
