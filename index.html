@@ -239,7 +239,7 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
     <button class="btn" id="btnSkip">⏭ Pereiti į kitą etapą</button>
     <button class="btn danger" id="btnStop">■ Atšaukti žaidimą</button>
   </div>
-  <button class="btn" id="btnTestSound">🔊 Išbandyti garsą</button>
+  <button class="btn" id="btnTestSound">🔊 Išbandyti garsą ir vibraciją</button>
   <p class="hint">Laikas skaičiuojamas net jei ekranas užgęsta. Kad girdėtumėte signalą – laikykite puslapį atidarytą ir telefoną su garsu.</p>
 </section>
 
@@ -392,8 +392,6 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
   /* ---------- Garsas ir vibracija ---------- */
   let audioCtx = null;
   function unlockAudio(){
-    // iPhone: be šito tylos režime (šoninis jungiklis) svetainės garsai negroja
-    try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch(e){}
     try {
       if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       if (audioCtx.state === "suspended") audioCtx.resume();
@@ -412,7 +410,28 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
       t += dur + (gap || .08);
     });
   }
-  const vibrate = p => { try { navigator.vibrate && navigator.vibrate(p); } catch(e){} };
+  /* Vibracija. Android – navigator.vibrate. iPhone jo neturi, todėl naudojamas „jungiklio“ (switch) triukas:
+     iOS 18+ Safari, perjungiant <input switch>, telefonas trumpai „tukteli“. Ilgas vibravimas imituojamas tuktelėjimų serija. */
+  let hapticLabel = null;
+  function iosTick(){
+    try {
+      if (!hapticLabel) {
+        const inp = document.createElement("input"); inp.type = "checkbox"; inp.setAttribute("switch", ""); inp.id = "hapticSw";
+        const lb = document.createElement("label"); lb.htmlFor = "hapticSw";
+        [inp, lb].forEach(el => el.style.cssText = "position:fixed;left:-100px;top:0;width:1px;height:1px;opacity:0;pointer-events:none");
+        document.body.append(inp, lb); hapticLabel = lb;
+      }
+      hapticLabel.click();
+    } catch(e){}
+  }
+  const vibrate = p => {
+    try { if (navigator.vibrate) { navigator.vibrate(p); return; } } catch(e){}
+    const pat = Array.isArray(p) ? p : [p]; let t = 0;
+    pat.forEach((d, i) => {
+      if (i % 2 === 0) { const n = Math.max(1, Math.round(d / 100)); for (let k = 0; k < n; k++) setTimeout(iosTick, t + k * 100); }
+      t += d;
+    });
+  };
   const SOUND_END = [[880,.35],[660,.35],[880,.35],[660,.35],[1046,.8]];
   const SOUND_WARN = [[440,.25,.1],[440,.25]];
   const SOUND_MIN = [[700,.15,.1],[700,.15]];
@@ -852,7 +871,7 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
   $("btnPauseSheet").onclick = () => { showSheet(null); askPause(); };
   $("btnResume").onclick = resumeGame;
   $("seekMin").oninput = renderTimer;
-  $("btnTestSound").onclick = () => { unlockAudio(); beep(SOUND_END); vibrate([300,100,300]); };
+  $("btnTestSound").onclick = () => { unlockAudio(); beep(SOUND_END); vibrate([500,300,500]); };
   $("timerChip").onclick = () => showSheet("timer");
   /* ---------- Pasiruošimas: slėpėjai spaudžia „Aš pasislėpiau“, ieškotojas pradeda paiešką ---------- */
   const myName = () => $("seekerName").value.trim() || (role === "seeker" ? "Ieškotojas" : "Slėpėjas");
