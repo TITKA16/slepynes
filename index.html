@@ -231,8 +231,9 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
   <div class="bigtime" id="bigTime">00:00</div>
   <div id="timerSetup">
     <label class="field">Paieškos laikas (min)<input type="number" id="seekMin" min="1" max="600" inputmode="numeric"></label>
-    <button class="btn primary" id="btnStart">▶ Pradėti žaidimą</button>
-    <p class="hint">Eiga: 1) Kas nors spaudžia „Pradėti žaidimą“ – slėpėjai eina slėptis. 2) Pasislėpęs kiekvienas spaudžia „🙈 Aš pasislėpiau“. 3) Kai visi pasislėpė, ieškotojas spaudžia „🔎 Pradėti paiešką“ ir prasideda paieškos laikas.</p>
+    <button class="btn primary" id="btnStart">🔎 Pradėti paiešką dabar</button>
+    <p class="hint" id="seekerOnlyHint">Paiešką pradeda ieškotojas, kai visi pasislėpė.</p>
+    <p class="hint">Eiga: 1) Slėpėjai eina slėptis ir pasislėpę spaudžia „🙈 Aš pasislėpiau“ (mygtukas ekrano apačioje). 2) Kai visi pasislėpė, ieškotojas spaudžia „🔎 Pradėti paiešką“ – visiems prasideda paieškos laikas.</p>
   </div>
   <div id="timerRunning" style="display:none">
     <button class="btn" id="btnPauseSheet" style="background:#4a3a10;border-color:#8a6a1a;color:#ffd27a">⏸ Pauzė (bėda, keičiu vietą…)</button>
@@ -535,7 +536,9 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
 
   /* Ryšys tarp telefonų: viešas nemokamas MQTT serveris (be paskyros, be žinučių limito).
      „Retained“ žinutės – serveris laiko paskutinę reikšmę, todėl vėliau prisijungęs iškart ją gauna. */
-  const BASE = "slepynes/" + SHARE_TOPIC;
+  // ?kanalas=xxx adrese – atskiras kanalas (bandymams arba kitai grupei), kad nesusimaišytų su pagrindiniu žaidimu
+  const chanParam = (new URLSearchParams(location.search).get("kanalas") || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 30);
+  const BASE = "slepynes/" + SHARE_TOPIC + (chanParam ? "-" + chanParam : "");
   const bus = (() => {
     const subs = {}; let client = null, connected = false, connecting = false, retryT = null, queue = [];
     const P = () => typeof Paho === "undefined" ? null : { Client: Paho.Client || (Paho.MQTT && Paho.MQTT.Client), Message: Paho.Message || (Paho.MQTT && Paho.MQTT.Message) };
@@ -680,7 +683,9 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
   document.querySelectorAll("#roleSeg button").forEach(b => b.onclick = () => {
     if (b.dataset.r === role) return;
     if (b.dataset.r === "seeker" && !confirm("Tapti ieškotoju? Tavo vieta bus rodoma slėpėjams.")) return;
-    setRole(b.dataset.r);
+    if (b.dataset.r === "hider" && !confirm("Tapti slėpėju? Nebebūsi ieškotojas – slėpėjai nebematys tavo vietos.")) return;
+    setRole(b.dataset.r); store.set("roleAt", Date.now());
+    toast(b.dataset.r === "seeker" ? "🔎 Dabar tu – ieškotojas" : "🙈 Dabar tu – slėpėjas", 3000);
   });
   $("seekerName").oninput = () => { store.set("seekerName", $("seekerName").value); lastPresence = 0; };
   $("roleChip").onclick = () => showSheet("timer");
@@ -739,7 +744,14 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
   $("seekMin").value = T.seekMin;
   const fmtT = ms => { const s = Math.max(0, Math.ceil(ms/1000)); const h = Math.floor(s/3600), m = Math.floor(s%3600/60), x = s%60;
     return (h ? h + ":" + String(m).padStart(2,"0") : String(m).padStart(2,"0")) + ":" + String(x).padStart(2,"0"); };
-  const PHASE_NAME = { idle:"Neprasidėjęs", hide:"Slėpimasis", seek:"Paieška", done:"Žaidimas baigtas" };
+  // „idle“ = slėpėjai slepiasi ir laukiama, kol ieškotojas pradės paiešką
+  const PHASE_NAME = { idle:"Slėpimasis", hide:"Slėpimasis", seek:"Paieška", done:"Žaidimas baigtas" };
+  // Slėpimosi „raundas“: patvirtinimai „pasislėpiau“ galioja tik šiam raundui.
+  // Kol paieška nevyksta – raundą žymi paskutinio laikmačio įvykio laikas; paieškos metu – raundas, iš kurio ji pradėta.
+  function readyKey(){
+    const p = phaseInfo(Date.now()).phase;
+    return (p === "idle" || p === "done") ? T.t : (T.round || T.startAt);
+  }
 
   function phaseInfo(now){
     if (T.stopped || !T.startAt) return { phase:"idle" };
@@ -760,7 +772,7 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
     if (!nt || !(nt.t >= T.t)) return;
     const old = T;
     T = { startAt:+nt.startAt || 0, seekAt:+nt.seekAt || 0, hideMin:+nt.hideMin || 0, seekMin:+nt.seekMin || DEFAULT_SEEK_MIN,
-          stopped:!!nt.stopped, done:!!nt.done, pausedAt:+nt.pausedAt || 0,
+          stopped:!!nt.stopped, done:!!nt.done, pausedAt:+nt.pausedAt || 0, round:+nt.round || 0,
           pauseBy:String(nt.pauseBy || "").slice(0, 20), pauseReason:String(nt.pauseReason || "").slice(0, 40), t:nt.t };
     store.set("timer2", T);
     $("seekMin").value = T.seekMin;
@@ -773,10 +785,10 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
         if (fromRemote) { beep([[880,.15,.1],[880,.15]]); vibrate(300); toast("▶ Žaidimas prasidėjo – slėpkitės!", 4000); }
         lastPhase = p;
       } else if (p === "seek" && lastPhase !== "hide") {
-        if (fromRemote) { beep([[880,.15]]); toast("🔎 Paieška vyksta", 4000); }
+        beep(SOUND_END); vibrate([600,200,600,200,600]); toast("🔎 Paieška prasidėjo – ieškotojas eina ieškoti!", 6000);
         lastPhase = p;
       } else if (p === "idle") {
-        if (fromRemote) toast("■ Laikmatis sustabdytas", 3000);
+        if (fromRemote) toast("■ Žaidimas atšauktas – galima slėptis iš naujo", 4000);
         lastPhase = p;
       }
     }
@@ -810,23 +822,31 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
     const txt = pi.unlimited ? "Slepiasi" : running ? fmtT(pi.endAt - pi.at) : pi.phase === "done" ? "00:00" : fmtT((parseFloat($("seekMin").value) || 0) * 60000);
     $("bigTime").textContent = txt; $("phaseText").textContent = PHASE_NAME[pi.phase] + (pi.paused ? " · PAUZĖ" : "");
     $("timerText").textContent = running || pi.phase === "done" ? txt : "--:--";
-    $("timerLabel").textContent = pi.phase === "idle" ? "Laikmatis" : pi.paused ? "⏸ Pauzė" : PHASE_NAME[pi.phase];
+    $("timerLabel").textContent = pi.paused ? "⏸ Pauzė" : PHASE_NAME[pi.phase];
+    if (pi.phase === "idle") $("timerText").textContent = "laukiama";
     $("btnPause").style.display = running && !pi.paused ? "block" : "none";
     $("btnPauseSheet").style.display = running && !pi.paused ? "block" : "none";
     renderPause(pi, running);
     $("timerChip").className = "chip " + (running ? pi.phase : "");
+    // paiešką pradeda tik ieškotojas
     $("timerSetup").style.display = running ? "none" : "block";
+    $("btnStart").style.display = role === "seeker" ? "block" : "none";
+    $("seekerOnlyHint").style.display = role === "seeker" ? "none" : "block";
     $("timerRunning").style.display = running ? "block" : "none";
     $("btnSkip").textContent = pi.phase === "hide" ? "⏭ Pradėti paiešką nelaukiant visų" :"⏭ Baigti žaidimą dabar (visiems)";
-    $("btnStart").textContent = pi.phase === "done" ? "↻ Pradėti iš naujo (visiems)" : "▶ Pradėti žaidimą (visiems)";
+  }
+  // Paieškos pradžia: slėpimasis baigiasi, prasideda paieškos laikas visiems
+  function startSeek(){
+    if (T.pausedAt) { toast("Žaidimas sustabdytas – pirma tęskite"); return; }
+    const s = Math.max(1, parseFloat($("seekMin").value) || DEFAULT_SEEK_MIN), now = Date.now();
+    unlockAudio(); keepAwake();
+    publishTimer({ startAt:now, seekAt:now, hideMin:0, seekMin:s, round:readyKey(), stopped:false, done:false });
   }
   $("btnStart").onclick = () => {
-    const s = Math.max(1, parseFloat($("seekMin").value) || DEFAULT_SEEK_MIN);
-    if (!confirm("Pradėti žaidimą visiems žaidėjams?\nSlėpėjai eina slėptis, paieška – " + s + " min.")) return;
-    unlockAudio(); keepAwake(); beep([[880,.12]]);
-    publishTimer({ startAt:Date.now(), seekAt:0, hideMin:0, seekMin:s, stopped:false, done:false });
+    const list = hidersList(), notReady = list.filter(p => !p.ready).map(p => p.name);
+    if (!confirm(notReady.length ? "Dar nepasislėpė: " + notReady.join(", ") + ".\nVis tiek pradėti paiešką?" : "Pradėti paiešką visiems?")) return;
+    startSeek();
   };
-  function startSeek(){ if (T.pausedAt) { toast("Žaidimas sustabdytas – pirma tęskite"); return; } publishTimer(Object.assign({}, T, { seekAt:Date.now() })); }
   $("btnSkip").onclick = () => {
     const p = phaseInfo(Date.now()).phase;
     if (p === "hide") { if (confirm("Pradėti paiešką dabar visiems?")) startSeek(); }
@@ -875,11 +895,11 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
   $("timerChip").onclick = () => showSheet("timer");
   /* ---------- Pasiruošimas: slėpėjai spaudžia „Aš pasislėpiau“, ieškotojas pradeda paiešką ---------- */
   const myName = () => $("seekerName").value.trim() || (role === "seeker" ? "Ieškotojas" : "Slėpėjas");
-  const iAmReady = () => myReady && myReadyGame === T.startAt;
+  const iAmReady = () => myReady && myReadyGame === readyKey();
   function publishPresence(){
     if (role !== "hider") return;
     const now = Date.now(); if (now - lastPresence < 15000) return; lastPresence = now;
-    bus.publish(PLAYERS_TOPIC + deviceId, { id:deviceId, name:myName(), ready:iAmReady(), game:T.startAt, t:now }, true);
+    bus.publish(PLAYERS_TOPIC + deviceId, { id:deviceId, name:myName(), ready:iAmReady(), game:readyKey(), t:now }, true);
   }
   function onPlayerMsg(d, topic){
     const id = topic.slice(PLAYERS_TOPIC.length);
@@ -890,15 +910,16 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
   }
   // Slėpėjai šiame žaidime: patvirtinę šiam žaidimui arba matyti per paskutines 3 min
   function hidersList(){
-    const now = Date.now();
-    return Object.values(players).filter(p => (p.ready && p.game === T.startAt && T.startAt && now - p.t < 3 * 3600000) || now - p.t < 180000)
-      .map(p => ({ name:p.name, ready:p.ready && p.game === T.startAt }))
+    const now = Date.now(), key = readyKey();
+    return Object.values(players).filter(p => (p.ready && p.game === key && now - p.t < 3 * 3600000) || now - p.t < 180000)
+      .map(p => ({ name:p.name, ready:p.ready && p.game === key }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }
   const esc = s => String(s).replace(/[&<>"']/g, c => "&#" + c.charCodeAt(0) + ";");
   function renderReady(){
     const bar = $("readyBar"), pi = phaseInfo(Date.now());
-    if (pi.phase !== "hide" || pi.paused) { bar.className = ""; return; }
+    // rodoma visada, kai paieška nevyksta (slėpimasis / laukiama / po žaidimo)
+    if (pi.phase === "seek" || pi.paused) { bar.className = ""; return; }
     const list = hidersList(), readyN = list.filter(p => p.ready).length;
     const names = list.map(p => (p.ready ? "✅ " : "⏳ ") + esc(p.name)).join("&nbsp;&nbsp; ");
     let html;
@@ -914,7 +935,7 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
         '<div class="rb-names">' + (names || "Dar nė vieno slėpėjo neprisijungė") + '</div>' +
         '<button class="btn primary" data-act="seek"' + (all ? "" : " disabled") + '>' +
         (all ? "🔎 Visi pasislėpė – pradėti paiešką" : list.length ? "Laukiama: " + waiting : "Laukiama slėpėjų…") + '</button>';
-      if (all && allReadyFor !== T.startAt) { allReadyFor = T.startAt; beep([[660,.15,.08],[880,.25]]); vibrate([300,100,300]); toast("✅ Visi pasislėpė!", 4000); }
+      if (all && allReadyFor !== readyKey()) { allReadyFor = readyKey(); beep([[660,.15,.08],[880,.25]]); vibrate([300,100,300]); toast("✅ Visi pasislėpė!", 4000); }
     }
     if (bar._html !== html) { bar.innerHTML = html; bar._html = html; }   // perpiešti tik pasikeitus
     bar.className = "show";
@@ -924,7 +945,7 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
     unlockAudio();
     if (b.dataset.act === "ready") {
       if (iAmReady()) myReady = false;
-      else { myReady = true; myReadyGame = T.startAt; vibrate(100); toast("✅ Ieškotojas mato, kad pasislėpei"); }
+      else { myReady = true; myReadyGame = readyKey(); vibrate(100); toast("✅ Ieškotojas mato, kad pasislėpei"); }
       lastPresence = 0; publishPresence(); renderReady();
     }
     if (b.dataset.act === "seek") startSeek();
