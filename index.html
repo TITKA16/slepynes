@@ -392,6 +392,8 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
   /* ---------- Garsas ir vibracija ---------- */
   let audioCtx = null;
   function unlockAudio(){
+    // iPhone: be šito tylos režime (šoninis jungiklis) svetainės garsai negroja
+    try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch(e){}
     try {
       if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       if (audioCtx.state === "suspended") audioCtx.resume();
