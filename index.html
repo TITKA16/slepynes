@@ -38,6 +38,10 @@ const SEEKER_SEND_EVERY_S = 8;   // kas kiek sekundžių ieškotojas siunčia vi
 const SEEKER_STALE_S = 90;       // po tiek sekundžių be naujos vietos – žymima kaip sena
 const SEEKER_NEAR_M = 50;        // slėpėjui rodomas raudonas perspėjimas, kai ieškotojas arčiau nei tiek
 
+// Ieškotojo slaptažodis. Kode laikoma tik jo SHA-256 maiša (su priedu "slepynes-salt:"), ne pats slaptažodis.
+// Naują maišą galima gauti paprašius Claude arba: sha256("slepynes-salt:" + naujas_slaptažodis)
+const SEEKER_PASSWORD_HASH = "44e0cea3532eab841aa393e2b4eee270c7f2217035097beef73d8774dc339874";
+
 // Žemėlapio centras ir priartinimas
 const MAP_CENTER = [54.101, 23.696];
 const MAP_ZOOM = 15;
@@ -177,6 +181,9 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
   .ptitle{font-size:24px;font-weight:800;color:#ffc94d}
   #pauseWho{font-size:20px;font-weight:700;margin:10px 0}
   .phelp{display:none;background:#5a1515;border:1px solid var(--danger);border-radius:12px;padding:10px;font-weight:700;margin:8px 0}
+  #playerList{background:#0f1115;border:1px solid var(--line);border-radius:12px;padding:8px 12px;margin:0 0 14px}
+  .pl-h{font-weight:700;margin-bottom:4px} .pl-row{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--line);font-size:16px}
+  .pl-st{color:var(--muted);white-space:nowrap}
   .askMsg{font-size:19px;font-weight:600;text-align:center;white-space:pre-line;margin:4px 0 12px}
   .modalBg{position:fixed;inset:0;z-index:1500;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;padding:16px}
   #roleAsk{position:fixed;inset:0;z-index:1500;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;padding:16px}
@@ -228,6 +235,7 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
   <label class="field" id="seekerNameWrap">Tavo vardas (matys kiti žaidėjai)
     <input type="text" id="seekerName" maxlength="20" placeholder="pvz. Tomas" style="font-size:17px"></label>
   <div class="roleinfo" id="roleInfo"></div>
+  <div id="playerList"></div>
   <div class="phase" id="phaseText">Neprasidėjęs</div>
   <div class="bigtime" id="bigTime">00:00</div>
   <div id="timerSetup">
@@ -311,6 +319,32 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
       box.querySelector('[data-v="0"]').textContent = no || "Ne";
       box.onclick = e => { const b = e.target.closest("button"); if (!b) return; box.remove(); res(b.dataset.v === "1"); };
       document.body.appendChild(box);
+    });
+  }
+  // Ieškotojo slaptažodžio patikra. Teisingai įvedus – šis telefonas įsimena ir daugiau neklausia.
+  async function sha256hex(s){
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+  }
+  function askSeekerPassword(){
+    if (store.get("seekerOk", "") === SEEKER_PASSWORD_HASH) return Promise.resolve(true);
+    return new Promise(res => {
+      const box = document.createElement("div"); box.className = "modalBg"; box.style.zIndex = 1700;
+      box.innerHTML = '<div class="roleAskCard"><p class="askMsg">🔒 Ieškotojo slaptažodis</p>' +
+        '<input type="password" id="pwIn" autocomplete="off" placeholder="Slaptažodis" style="font-size:20px">' +
+        '<p class="hint" id="pwErr" style="color:var(--danger);display:none;text-align:center">Neteisingas slaptažodis</p>' +
+        '<button class="btn primary" data-v="1" style="min-height:60px;font-size:19px">🔎 Tapti ieškotoju</button>' +
+        '<button class="btn" data-v="0">Atšaukti</button></div>';
+      document.body.appendChild(box);
+      const inp = box.querySelector("#pwIn"); setTimeout(() => inp.focus(), 50);
+      const done = ok => { box.remove(); res(ok); };
+      const check = async () => {
+        let h = ""; try { h = await sha256hex("slepynes-salt:" + inp.value.trim()); } catch(e) {}
+        if (h === SEEKER_PASSWORD_HASH) { store.set("seekerOk", h); done(true); }
+        else { box.querySelector("#pwErr").style.display = "block"; inp.value = ""; inp.focus(); vibrate(200); }
+      };
+      inp.onkeydown = e => { if (e.key === "Enter") check(); };
+      box.onclick = e => { const b = e.target.closest("button"); if (!b) return; if (b.dataset.v === "1") check(); else done(false); };
     });
   }
 
@@ -691,14 +725,13 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
     const was = role; role = r; store.set("role", r);
     // buvęs ieškotojas – ištrinti jo paskutinę vietą iš serverio
     if (r === "hider" && was === "seeker") bus.publish(SEEKER_TOPIC + deviceId, null, true);
-    if (r === "seeker" && was === "hider") bus.publish(PLAYERS_TOPIC + deviceId, null, true);
     lastPresence = 0;
     if (r === "hider") subscribe(); else { unsubscribe(); lastSent = 0; if (lastPos) sendSeekerPos(lastPos[0], lastPos[1], accCircle ? accCircle.getRadius() : 50); }
     renderRoleInfo(); renderSeekers();
   }
   document.querySelectorAll("#roleSeg button").forEach(b => b.onclick = async () => {
     if (b.dataset.r === role) return;
-    if (b.dataset.r === "seeker" && !(await ask("Tapti ieškotoju?\nTavo vieta bus rodoma slėpėjams.", "🔎 Taip, būsiu ieškotojas", "Atšaukti"))) return;
+    if (b.dataset.r === "seeker" && !(await askSeekerPassword())) return;
     if (b.dataset.r === "hider" && !(await ask("Tapti slėpėju?\nNebebūsi ieškotojas.", "🙈 Taip, būsiu slėpėjas", "Atšaukti"))) return;
     setRole(b.dataset.r); store.set("roleAt", Date.now());
     toast(b.dataset.r === "seeker" ? "🔎 Dabar tu – ieškotojas" : "🙈 Dabar tu – slėpėjas", 3000);
@@ -719,12 +752,13 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
       '<label class="field">Tavo vardas<input type="text" id="askName" maxlength="20" placeholder="pvz. Tomas" style="font-size:18px"></label>' +
       '<button class="btn" data-r="hider" style="min-height:72px;font-size:20px">🙈 Slėpėjas</button>' +
       '<button class="btn" data-r="seeker" style="min-height:72px;font-size:20px">🔎 Ieškotojas</button>' +
-      '<p class="hint">Ieškotojo vieta rodoma slėpėjams. Slėpėjų vieta niekur nesiunčiama.</p></div>';
+      '<p class="hint">🔒 Ieškotojui reikia slaptažodžio. Ieškotojo vieta rodoma slėpėjams, slėpėjų vieta niekur nesiunčiama.</p></div>';
     document.body.appendChild(box);
     $("askName").value = $("seekerName").value;
-    box.querySelectorAll("button").forEach(b => b.onclick = () => {
+    box.querySelectorAll("button").forEach(b => b.onclick = async () => {
       const nm = $("askName").value.trim();
       if (!nm) { toast("Įrašyk savo vardą"); $("askName").focus(); return; }
+      if (b.dataset.r === "seeker" && !(await askSeekerPassword())) return;
       $("seekerName").value = nm; store.set("seekerName", nm); lastPresence = 0;
       unlockAudio(); setRole(b.dataset.r); store.set("roleAt", Date.now()); box.remove();
       if (watchId === null) startGPS();
@@ -831,7 +865,7 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
       const left = pi.endAt - now, key = pi.phase + T.startAt;
       if (left <= 60000 && left > 0 && warnedFor !== key && pi.dur > 1) { warnedFor = key; beep(SOUND_MIN); vibrate(200); toast("Liko 1 minutė", 3000); }
     }
-    renderTimer(); renderReady();
+    renderTimer(); renderReady(); if (openSheet === "timer") renderPlayers();
   }
   function renderTimer(){
     const pi = phaseInfo(Date.now()), running = pi.phase === "hide" || pi.phase === "seek";
@@ -913,24 +947,40 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
   /* ---------- Pasiruošimas: slėpėjai spaudžia „Aš pasislėpiau“, ieškotojas pradeda paiešką ---------- */
   const myName = () => $("seekerName").value.trim() || (role === "seeker" ? "Ieškotojas" : "Slėpėjas");
   const iAmReady = () => myReady && myReadyGame === readyKey();
+  // Kiekvienas žaidėjas (ir ieškotojas) praneša vardą, vaidmenį ir ar pasislėpęs – BE vietos
   function publishPresence(){
-    if (role !== "hider") return;
     const now = Date.now(); if (now - lastPresence < 15000) return; lastPresence = now;
-    bus.publish(PLAYERS_TOPIC + deviceId, { id:deviceId, name:myName(), ready:iAmReady(), game:readyKey(), t:now }, true);
+    bus.publish(PLAYERS_TOPIC + deviceId, { id:deviceId, name:myName(), role, ready:role === "hider" && iAmReady(), game:readyKey(), t:now }, true);
   }
   function onPlayerMsg(d, topic){
     const id = topic.slice(PLAYERS_TOPIC.length);
     if (id === deviceId) return;
     if (!d) delete players[id];
-    else if (d.id) players[id] = { name:String(d.name || "Slėpėjas").slice(0, 20), ready:!!d.ready, game:+d.game || 0, t:+d.t || 0 };
-    renderReady();
+    else if (d.id) players[id] = { name:String(d.name || "Slėpėjas").slice(0, 20), role:d.role === "seeker" ? "seeker" : "hider",
+                                   ready:!!d.ready, game:+d.game || 0, t:+d.t || 0 };
+    renderReady(); renderPlayers();
   }
-  // Slėpėjai šiame žaidime: patvirtinę šiam žaidimui arba matyti per paskutines 3 min
-  function hidersList(){
+  // Žaidėjai šiame raunde: patvirtinę šiam raundui arba matyti per paskutines 3 min
+  function playersList(){
     const now = Date.now(), key = readyKey();
     return Object.values(players).filter(p => (p.ready && p.game === key && now - p.t < 3 * 3600000) || now - p.t < 180000)
-      .map(p => ({ name:p.name, ready:p.ready && p.game === key }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .map(p => ({ name:p.name, role:p.role, ready:p.ready && p.game === key }));
+  }
+  function hidersList(){
+    return playersList().filter(p => p.role !== "seeker").sort((a, b) => a.name.localeCompare(b.name));
+  }
+  // Žaidėjų sąrašas „⏱ Žaidimas“ lange – matomas visiems
+  function renderPlayers(){
+    const el = $("playerList"); if (!el) return;
+    const all = playersList().concat([{ name:myName() + " (tu)", role, ready:role === "hider" && iAmReady() }]);
+    const seekers = all.filter(p => p.role === "seeker"), hiders = all.filter(p => p.role !== "seeker");
+    const searching = phaseInfo(Date.now()).phase === "seek";
+    const line = p => '<div class="pl-row"><span>' + (p.role === "seeker" ? "🔎 " : "🙈 ") + esc(p.name) + '</span><span class="pl-st">' +
+      (p.role === "seeker" ? "ieškotojas" : searching ? "slepiasi" : p.ready ? "✅ pasislėpęs" : "⏳ slepiasi") + '</span></div>';
+    const html = '<div class="pl-h">👥 Žaidėjai (' + all.length + ')</div>' +
+      (seekers.length ? seekers.map(line).join("") : '<div class="pl-row"><span>🔎 Ieškotojo dar nėra</span></div>') +
+      hiders.map(line).join("");
+    if (el._html !== html) { el.innerHTML = html; el._html = html; }
   }
   const esc = s => String(s).replace(/[&<>"']/g, c => "&#" + c.charCodeAt(0) + ";");
   function renderReady(){
