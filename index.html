@@ -145,11 +145,12 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
   #alarmBox small{display:block;font-size:16px;font-weight:600;opacity:.95;margin-top:2px}
   @keyframes pulse{50%{box-shadow:inset 0 0 0 18px rgba(255,77,77,.55)}}
 
-  #toast{position:fixed;left:50%;top:calc(124px + var(--safe-t));transform:translateX(-50%);z-index:1300;
+  #toast{position:fixed;left:50%;top:calc(124px + var(--safe-t));transform:translateX(-50%);z-index:1600;
     background:#222630;border:1px solid var(--line);padding:10px 16px;border-radius:12px;display:none;max-width:90vw;text-align:center}
   #editBanner{position:fixed;left:8px;right:64px;top:calc(72px + var(--safe-t));z-index:1000;display:none;
     background:rgba(77,163,255,.95);color:#04121f;font-weight:700;border-radius:12px;padding:10px 12px;font-size:14px}
-  body.editing #editBanner{display:block}
+  body.drawing #editBanner{display:block}
+  #btnDraw.on{background:var(--danger);border-color:var(--danger);color:#fff}
 
   .me-dot{width:20px;height:20px;border-radius:50%;background:var(--accent);border:3px solid #fff;
     box-shadow:0 0 0 6px rgba(77,163,255,.3)}
@@ -169,6 +170,14 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
   #readyBar.show{display:block} body.editing #readyBar{display:none}
   #readyBar .btn{margin:6px 0;min-height:60px;font-size:18px}
   .rb-info{font-weight:700;font-size:16px} .rb-names{color:var(--muted);font-size:14px;margin-top:2px;word-break:break-word}
+  .pausebtn{width:60px;height:60px;font-size:26px;background:#8a6a1a!important;border-color:#ffc94d!important;margin-left:-6px}
+  #pauseOv{position:fixed;inset:0;z-index:1250;display:none;background:rgba(0,0,0,.72);align-items:center;justify-content:center;padding:16px}
+  #pauseOv.show{display:flex}
+  .pcard{background:var(--panel);border:2px solid #ffc94d;border-radius:20px;padding:18px;width:100%;max-width:420px;text-align:center}
+  .ptitle{font-size:24px;font-weight:800;color:#ffc94d}
+  #pauseWho{font-size:20px;font-weight:700;margin:10px 0}
+  .phelp{display:none;background:#5a1515;border:1px solid var(--danger);border-radius:12px;padding:10px;font-weight:700;margin:8px 0}
+  .modalBg{position:fixed;inset:0;z-index:1500;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;padding:16px}
   #roleAsk{position:fixed;inset:0;z-index:1500;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;padding:16px}
   .roleAskCard{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:18px;width:100%;max-width:420px}
   .roleAskCard h2{margin:0 0 8px;font-size:22px;text-align:center}
@@ -190,10 +199,20 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
   <button class="round" id="btnCenter" title="Centruoti į mane">🎯</button>
   <button class="round" id="btnFit" title="Rodyti visą zoną">🗺️</button>
   <button class="round" id="btnTheme" title="Šviesus / tamsus žemėlapis">🌓</button>
+  <button class="round pausebtn" id="btnPause" title="Sustabdyti žaidimą" style="display:none">⏸</button>
 </div>
 
+<div id="pauseOv"><div class="pcard">
+  <div class="ptitle">⏸ ŽAIDIMAS SUSTABDYTAS</div>
+  <div id="pauseWho"></div>
+  <div id="pauseHelp" class="phelp">🆘 Kam nors reikia pagalbos! Susisiekite su juo telefonu ir, jei reikia, eikite padėti.</div>
+  <p class="hint">Ieškotojas stovi vietoje ir nesidairo. Laikas sustabdytas – pauzė nuo žaidimo laiko nenuskaičiuojama.</p>
+  <p class="hint" id="pauseSince"></p>
+  <button class="btn primary" id="btnResume" style="min-height:64px;font-size:20px">▶ Tęsti žaidimą</button>
+</div></div>
+
 <div id="seekerChip"></div>
-<div id="editBanner">✏️ Spauskite žemėlapį – pridėsite tašką</div>
+<div id="editBanner">✏️ Žymėjimas įjungtas – spauskite žemėlapį</div>
 
 <div id="alarm"><div id="alarmBox"><span id="alarmTitle">⚠️ UŽ RIBOS!</span><small id="alarmSub">Grįžk atgal</small></div></div>
 <div id="toast"></div>
@@ -216,8 +235,9 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
     <p class="hint">Eiga: 1) Kas nors spaudžia „Pradėti žaidimą“ – slėpėjai eina slėptis. 2) Pasislėpęs kiekvienas spaudžia „🙈 Aš pasislėpiau“. 3) Kai visi pasislėpė, ieškotojas spaudžia „🔎 Pradėti paiešką“ ir prasideda paieškos laikas.</p>
   </div>
   <div id="timerRunning" style="display:none">
+    <button class="btn" id="btnPauseSheet" style="background:#4a3a10;border-color:#8a6a1a;color:#ffd27a">⏸ Pauzė (bėda, keičiu vietą…)</button>
     <button class="btn" id="btnSkip">⏭ Pereiti į kitą etapą</button>
-    <button class="btn danger" id="btnStop">■ Sustabdyti</button>
+    <button class="btn danger" id="btnStop">■ Atšaukti žaidimą</button>
   </div>
   <button class="btn" id="btnTestSound">🔊 Išbandyti garsą</button>
   <p class="hint">Laikas skaičiuojamas net jei ekranas užgęsta. Kad girdėtumėte signalą – laikykite puslapį atidarytą ir telefoną su garsu.</p>
@@ -239,6 +259,7 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
   <label class="field" id="zoneNameWrap" style="display:none">Zonos pavadinimas
     <input type="text" id="zoneName" placeholder="pvz. Privatus kiemas" style="font-size:17px"></label>
   <p class="hint" id="draftInfo">Taškų: 0</p>
+  <button class="btn primary" id="btnDraw" style="min-height:64px;font-size:19px">✏️ Žymėti taškus</button>
   <div class="row">
     <button class="btn" id="btnUndo">↶ Atšaukti tašką</button>
     <button class="btn" id="btnClear">🗑 Išvalyti</button>
@@ -246,7 +267,7 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
   <button class="btn" id="btnLoadCurrent">📥 Įkelti esamą ribą redagavimui</button>
   <button class="btn primary" id="btnApply">✔ Išsaugoti</button>
   <button class="btn primary" id="btnShare">🔗 Siųsti nuorodą draugams</button>
-  <p class="hint">1) Nubrėžkite ribą ir spauskite <b>Išsaugoti</b>. 2) Spauskite <b>Siųsti nuorodą draugams</b> – nuorodoje bus jūsų riba ir draudžiamos zonos. Kas ją atidarys, matys tą pačią ribą (telefonas ją įsimins).</p>
+  <p class="hint">1) Spauskite <b>✏️ Žymėti taškus</b> ir spaudinėkite žemėlapį. 2) Spauskite <b>✔ Išsaugoti</b> – riba automatiškai atsiras visų žaidėjų telefonuose. Nuorodą siųsti reikia tik tiems, kurie dar neturi svetainės.</p>
   <div id="zoneList"></div>
   <button class="btn" id="btnReset">↺ Grąžinti numatytąją ribą</button>
   <button class="btn" id="btnCopy">📋 Kopijuoti koordinates (kodui)</button>
@@ -259,7 +280,7 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
   <button class="navbtn" id="navLocate"><span>📍</span>Mano vieta</button>
   <button class="navbtn" data-sheet="timer"><span>⏱</span>Žaidimas</button>
   <button class="navbtn" data-sheet="rules"><span>📜</span>Taisyklės</button>
-  <button class="navbtn" data-sheet="edit"><span>✏️</span>Redaguoti</button>
+  <button class="navbtn" data-sheet="edit" id="navEdit"><span>✏️</span>Ribos</button>
 </nav>
 
 <script>
@@ -608,6 +629,10 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
   }
   function renderRoleInfo(){
     $("roleIcon").textContent = role === "seeker" ? "🔎" : "🙈";
+    // ribas tvarko tik ieškotojas
+    $("navEdit").style.display = role === "seeker" ? "" : "none";
+    $("bottombar").style.gridTemplateColumns = "repeat(" + (role === "seeker" ? 4 : 3) + ",1fr)";
+    try { if (role !== "seeker" && openSheet === "edit") showSheet(null); } catch(e) {}   // paleidimo metu openSheet dar neapibrėžtas
     document.querySelectorAll("#roleSeg button").forEach(b => b.classList.toggle("on", b.dataset.r === role));
     $("seekerNameWrap").style.display = "block";
     let t;
@@ -670,11 +695,15 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
   /* ---------- Lapai ---------- */
   let openSheet = null;
   function showSheet(name){
+    if (name === "edit" && role !== "seeker") { toast("Ribas gali keisti tik ieškotojas"); return; }
+    const wasEdit = openSheet === "edit";
     document.querySelectorAll(".sheet").forEach(s => s.classList.remove("open"));
     document.querySelectorAll("[data-sheet]").forEach(b => b.classList.toggle("active", b.dataset.sheet === name && openSheet !== name));
-    if (openSheet === name || !name) { openSheet = null; return; }
-    $("sheet-" + name).classList.add("open"); openSheet = name;
-    if (name === "edit") setEditing(true);
+    if (openSheet === name || !name) openSheet = null;
+    else { $("sheet-" + name).classList.add("open"); openSheet = name; }
+    // redagavimas veikia tik kol atidarytas redagavimo langas
+    if (openSheet === "edit" && !wasEdit) setEditing(true);
+    if (wasEdit && openSheet !== "edit") setEditing(false);
   }
   document.querySelectorAll("[data-sheet]").forEach(b => b.onclick = () => showSheet(b.dataset.sheet));
   document.querySelectorAll("[data-close]").forEach(b => b.onclick = () => showSheet(null));
@@ -694,21 +723,28 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
   function phaseInfo(now){
     if (T.stopped || !T.startAt) return { phase:"idle" };
     if (T.done) return { phase:"done" };
+    // pauzės metu laikas „užšąla“ ties pausedAt
+    const paused = !!T.pausedAt; if (paused) now = T.pausedAt;
     // seekAt – kai ieškotojas paspaudžia „Pradėti paiešką“; hideMin 0 – slėpimasis be laiko ribos
     const hideEnd = T.seekAt || (T.hideMin > 0 ? T.startAt + T.hideMin * 60000 : Infinity);
-    if (hideEnd === Infinity) return { phase:"hide", endAt:null, unlimited:true };
+    if (hideEnd === Infinity) return { phase:"hide", endAt:null, unlimited:true, paused, at:now };
     const seekEnd = hideEnd + T.seekMin * 60000;
-    if (now < hideEnd) return { phase:"hide", endAt:hideEnd, dur:T.hideMin };
-    if (now < seekEnd) return { phase:"seek", endAt:seekEnd, dur:T.seekMin };
+    if (now < hideEnd) return { phase:"hide", endAt:hideEnd, dur:T.hideMin, paused, at:now };
+    if (now < seekEnd) return { phase:"seek", endAt:seekEnd, dur:T.seekMin, paused, at:now };
     return { phase:"done" };
   }
   let lastPhase = phaseInfo(Date.now()).phase, warnedFor = "";
 
   function applyTimer(nt, fromRemote){
-    if (!nt || !(nt.t > T.t)) return;
-    T = { startAt:+nt.startAt || 0, seekAt:+nt.seekAt || 0, hideMin:+nt.hideMin || 0, seekMin:+nt.seekMin || DEFAULT_SEEK_MIN, stopped:!!nt.stopped, done:!!nt.done, t:nt.t };
+    if (!nt || !(nt.t >= T.t)) return;
+    const old = T;
+    T = { startAt:+nt.startAt || 0, seekAt:+nt.seekAt || 0, hideMin:+nt.hideMin || 0, seekMin:+nt.seekMin || DEFAULT_SEEK_MIN,
+          stopped:!!nt.stopped, done:!!nt.done, pausedAt:+nt.pausedAt || 0,
+          pauseBy:String(nt.pauseBy || "").slice(0, 20), pauseReason:String(nt.pauseReason || "").slice(0, 40), t:nt.t };
     store.set("timer2", T);
     $("seekMin").value = T.seekMin;
+    if (!old.pausedAt && T.pausedAt) { beep([[520,.3,.1],[520,.3,.1],[520,.3]]); vibrate([500,200,500,200,500]); }
+    if (old.pausedAt && !T.pausedAt && old.startAt === T.startAt && !T.stopped && !T.done) { beep([[660,.15,.08],[880,.25]]); vibrate(300); toast("▶ Žaidimas tęsiamas!", 4000); }
     const p =phaseInfo(Date.now()).phase;
     // perėjimus slėpimasis→paieška ir →pabaiga paskelbia tick()
     if (p !== lastPhase) {
@@ -742,7 +778,7 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
       if (pi.phase === "done" && (lastPhase === "seek" || lastPhase === "hide")) { beep(SOUND_END.concat(SOUND_END)); vibrate([800,200,800,200,800,200,800]); toast("🏁 Laikas baigėsi! Visi grįžta į startą.", 8000); }
       lastPhase = pi.phase;
     }
-    if (pi.endAt) {
+    if (pi.endAt && !pi.paused) {
       const left = pi.endAt - now, key = pi.phase + T.startAt;
       if (left <= 60000 && left > 0 && warnedFor !== key && pi.dur > 1) { warnedFor = key; beep(SOUND_MIN); vibrate(200); toast("Liko 1 minutė", 3000); }
     }
@@ -750,10 +786,13 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
   }
   function renderTimer(){
     const pi = phaseInfo(Date.now()), running = pi.phase === "hide" || pi.phase === "seek";
-    const txt = pi.unlimited ? "Slepiasi" : running ? fmtT(pi.endAt - Date.now()) : pi.phase === "done" ? "00:00" : fmtT((parseFloat($("seekMin").value) || 0) * 60000);
-    $("bigTime").textContent = txt; $("phaseText").textContent = PHASE_NAME[pi.phase];
+    const txt = pi.unlimited ? "Slepiasi" : running ? fmtT(pi.endAt - pi.at) : pi.phase === "done" ? "00:00" : fmtT((parseFloat($("seekMin").value) || 0) * 60000);
+    $("bigTime").textContent = txt; $("phaseText").textContent = PHASE_NAME[pi.phase] + (pi.paused ? " · PAUZĖ" : "");
     $("timerText").textContent = running || pi.phase === "done" ? txt : "--:--";
-    $("timerLabel").textContent = pi.phase === "idle" ? "Laikmatis" : PHASE_NAME[pi.phase];
+    $("timerLabel").textContent = pi.phase === "idle" ? "Laikmatis" : pi.paused ? "⏸ Pauzė" : PHASE_NAME[pi.phase];
+    $("btnPause").style.display = running && !pi.paused ? "block" : "none";
+    $("btnPauseSheet").style.display = running && !pi.paused ? "block" : "none";
+    renderPause(pi, running);
     $("timerChip").className = "chip " + (running ? pi.phase : "");
     $("timerSetup").style.display = running ? "none" : "block";
     $("timerRunning").style.display = running ? "block" : "none";
@@ -766,13 +805,50 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
     unlockAudio(); keepAwake(); beep([[880,.12]]);
     publishTimer({ startAt:Date.now(), seekAt:0, hideMin:0, seekMin:s, stopped:false, done:false });
   };
-  function startSeek(){ publishTimer(Object.assign({}, T, { seekAt:Date.now() })); }
+  function startSeek(){ if (T.pausedAt) { toast("Žaidimas sustabdytas – pirma tęskite"); return; } publishTimer(Object.assign({}, T, { seekAt:Date.now() })); }
   $("btnSkip").onclick = () => {
     const p = phaseInfo(Date.now()).phase;
     if (p === "hide") { if (confirm("Pradėti paiešką dabar visiems?")) startSeek(); }
-    else if (confirm("Baigti žaidimą dabar visiems?")) publishTimer(Object.assign({}, T, { done:true }));
+    else if (confirm("Baigti žaidimą dabar visiems?")) publishTimer(Object.assign({}, T, { done:true, pausedAt:0 }));
   };
-  $("btnStop").onclick = () => { if (confirm("Sustabdyti laikmatį visiems?")) publishTimer(Object.assign({}, T, { stopped:true, done:false })); };
+  $("btnStop").onclick = () => { if (confirm("Atšaukti žaidimą visiems?")) publishTimer(Object.assign({}, T, { stopped:true, done:false, pausedAt:0 })); };
+
+  /* ---------- Pauzė: bet kuris žaidėjas gali sustabdyti žaidimą visiems ---------- */
+  const PAUSE_REASONS = ["🔁 Keičiu slėptuvę", "🆘 Reikia pagalbos", "✋ Kita priežastis"];
+  function askPause(){
+    unlockAudio();
+    const box = document.createElement("div"); box.className = "modalBg";
+    box.innerHTML = '<div class="roleAskCard"><h2>⏸ Sustabdyti žaidimą visiems?</h2><p class="hint" style="text-align:center">Pasirink priežastį – ją pamatys visi žaidėjai</p>' +
+      PAUSE_REASONS.map(r => '<button class="btn" data-r="' + r + '" style="min-height:64px;font-size:19px">' + r + '</button>').join("") +
+      '<button class="btn danger" data-r="">Atšaukti</button></div>';
+    document.body.appendChild(box);
+    box.onclick = e => {
+      const b = e.target.closest("button"); if (!b) return;
+      box.remove();
+      if (!b.dataset.r) return;
+      if (b.dataset.r === PAUSE_REASONS[0] && role === "hider") { myReady = false; lastPresence = 0; publishPresence(); }
+      publishTimer(Object.assign({}, T, { pausedAt:Date.now(), pauseBy:myName(), pauseReason:b.dataset.r }));
+    };
+  }
+  function resumeGame(){
+    if (!T.pausedAt) return;
+    if (T.pauseBy && T.pauseBy !== myName() && !confirm("Žaidimą sustabdė " + T.pauseBy + ". Ar tikrai tęsti?")) return;
+    const d = Date.now() - T.pausedAt, nt = Object.assign({}, T, { pausedAt:0, pauseBy:"", pauseReason:"" });
+    // jei pauzė buvo paieškos metu – paieškos pabaiga pasislenka per pauzės trukmę
+    if (T.seekAt && T.pausedAt >= T.seekAt) nt.seekAt = T.seekAt + d;
+    publishTimer(nt);
+  }
+  function renderPause(pi, running){
+    const ov = $("pauseOv");
+    if (!(running && pi.paused)) { ov.className = ""; return; }
+    $("pauseWho").textContent = (T.pauseBy || "Žaidėjas") + ": " + (T.pauseReason || "pauzė");
+    $("pauseHelp").style.display = /pagalbos/.test(T.pauseReason) ? "block" : "none";
+    $("pauseSince").textContent = "Sustabdyta prieš " + ago(Date.now() - T.pausedAt);
+    ov.className = "show";
+  }
+  $("btnPause").onclick = askPause;
+  $("btnPauseSheet").onclick = () => { showSheet(null); askPause(); };
+  $("btnResume").onclick = resumeGame;
   $("seekMin").oninput = renderTimer;
   $("btnTestSound").onclick = () => { unlockAudio(); beep(SOUND_END); vibrate([300,100,300]); };
   $("timerChip").onclick = () => showSheet("timer");
@@ -801,7 +877,7 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
   const esc = s => String(s).replace(/[&<>"']/g, c => "&#" + c.charCodeAt(0) + ";");
   function renderReady(){
     const bar = $("readyBar"), pi = phaseInfo(Date.now());
-    if (pi.phase !== "hide") { bar.className = ""; return; }
+    if (pi.phase !== "hide" || pi.paused) { bar.className = ""; return; }
     const list = hidersList(), readyN = list.filter(p => p.ready).length;
     const names = list.map(p => (p.ready ? "✅ " : "⏳ ") + esc(p.name)).join("&nbsp;&nbsp; ");
     let html;
@@ -847,10 +923,19 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
   const pts = () => draft[editTarget];
   const saveDraft = () => store.set("draft", draft);
 
+  // drawing – taškai dedami TIK paspaudus „Žymėti taškus“
+  let drawing = false;
   function setEditing(on){
     editing = on; document.body.classList.toggle("editing", on);
+    if (!on) setDrawing(false); else redrawDraft();
+  }
+  function setDrawing(on){
+    drawing = on; document.body.classList.toggle("drawing", on);
+    const b = $("btnDraw"); b.classList.toggle("on", on);
+    b.textContent = on ? "✋ Baigti žymėti" : "✏️ Žymėti taškus";
     redrawDraft();
   }
+  $("btnDraw").onclick = () => setDrawing(!drawing);
   function redrawDraft(){
     draftLayer.clearLayers();
     if (!editing) return;
@@ -860,14 +945,14 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
     else if (p.length === 2) shape = L.polyline(p, { color, weight:3, interactive:false });
     if (shape) shape.addTo(draftLayer);
     p.forEach((pt, i) => {
-      const m = L.marker(pt, { icon:vtxIcon(i === 0), draggable:true, zIndexOffset:2000 }).addTo(draftLayer);
+      const m = L.marker(pt, { icon:vtxIcon(i === 0), draggable:drawing, interactive:drawing, zIndexOffset:2000 }).addTo(draftLayer);
       m.on("drag", e => { const ll = e.target.getLatLng(); p[i] = [ll.lat, ll.lng]; if (shape) shape.setLatLngs(p); });
       m.on("dragend", saveDraft);
     });
     $("draftInfo").textContent = "Taškų: " + p.length + (p.length < 3 ? " (reikia bent 3)" : "");
   }
   map.on("click", e => {
-    if (!editing) return;
+    if (!editing || !drawing) return;
     pts().push([+e.latlng.lat.toFixed(6), +e.latlng.lng.toFixed(6)]);
     saveDraft(); redrawDraft();
   });
@@ -889,7 +974,7 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
       zones.push({ name: $("zoneName").value.trim() || "Draudžiama zona " + (zones.length + 1), coords: p.map(x => x.slice()) });
       draft.zone = []; $("zoneName").value = ""; saveDraft(); toast("✅ Zona išsaugota");
     }
-    saveCustom(); history.replaceState(null, "", "#" + encodeGame(boundary, zones));
+    saveCustom(); history.replaceState(null, "", "#" + encodeGame(boundary, zones)); publishBoundary(); setDrawing(false);
     drawGame(); redrawDraft(); if (lastPos) evaluate(lastPos[0], lastPos[1], accCircle ? accCircle.getRadius() : 0);
   };
   const fmtPts = (arr, ind) => arr.map(p => ind + "[" + p[0].toFixed(5) + ", " + p[1].toFixed(5) + "],").join("\n");
@@ -920,7 +1005,7 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
       const row = document.createElement("div"); row.className = "zone-item";
       const s = document.createElement("span"); s.textContent = "⛔ " + z.name;
       const b = document.createElement("button"); b.textContent = "Šalinti";
-      b.onclick = () => { if (confirm("Pašalinti „" + z.name + "“?")) { zones.splice(i, 1); saveCustom(); history.replaceState(null, "", "#" + encodeGame(boundary, zones)); drawGame(); } };
+      b.onclick = () => { if (confirm("Pašalinti „" + z.name + "“?")) { zones.splice(i, 1); saveCustom(); history.replaceState(null, "", "#" + encodeGame(boundary, zones)); publishBoundary(); drawGame(); } };
       row.append(s, b); el.appendChild(row);
     });
   }
@@ -947,13 +1032,33 @@ const RULES_TEXT = `1. Žaidžiama tik raudonai pažymėtoje zonoje. Išėjus u�
     boundary = GAME_BOUNDARY.map(p => p.slice());
     zones = FORBIDDEN_ZONES.map(z => ({ name: z.name, coords: z.coords.map(p => p.slice()) }));
     history.replaceState(null, "", location.pathname);
-    drawGame(); fitGame(); toast("Grąžinta numatytoji riba");
+    publishBoundary(); drawGame(); fitGame(); toast("Grąžinta numatytoji riba");
   };
-  $("btnExitEdit").onclick = () => { setEditing(false); showSheet(null); };
+  $("btnExitEdit").onclick = () => showSheet(null);
+
+  /* Ribų sinchronizavimas: ieškotojo išsaugotos ribos per serverį atsiranda visiems */
+  const BOUNDARY_TOPIC = BASE + "/ribos";
+  const validPts = a => Array.isArray(a) && a.length <= 500 && a.every(p => Array.isArray(p) && p.length === 2 && isFinite(p[0]) && isFinite(p[1]));
+  function publishBoundary(){
+    const t = Date.now(); store.set("customT", t);
+    bus.publish(BOUNDARY_TOPIC, { boundary, zones, by:deviceId, t }, true);
+  }
+  bus.subscribe(BOUNDARY_TOPIC, d => {
+    if (!d || d.by === deviceId || !(d.t > store.get("customT", 0))) return;
+    if (!validPts(d.boundary) || !Array.isArray(d.zones)) return;
+    const zs = d.zones.filter(z => z && validPts(z.coords)).slice(0, 50).map(z => ({ name:String(z.name || "Draudžiama zona").slice(0, 40), coords:z.coords }));
+    boundary = d.boundary.map(p => [+p[0], +p[1]]); zones = zs;
+    saveCustom(); store.set("customT", d.t);
+    history.replaceState(null, "", boundary.length >= 3 ? "#" + encodeGame(boundary, zones) : location.pathname);
+    drawGame(); if (boundary.length >= 3) fitGame();
+    if (lastPos) evaluate(lastPos[0], lastPos[1], lastAcc);
+    toast("🗺️ Ieškotojas atnaujino žaidimo ribas", 4000);
+  });
+  if (fromLink) store.set("customT", Date.now());
 
   /* Paleidimo patarimas, jei puslapis atidarytas ne per https */
   if (location.protocol === "file:") toast("GPS veikia tik per https (pvz. GitHub Pages)", 4000);
-  else if (boundary.length < 3) toast("Ribos dar nėra – nubrėžkite ją per ✏️ Redaguoti", 5000);
+  else if (boundary.length < 3) toast(role === "seeker" ? "Ribos dar nėra – nubrėžkite ją per ✏️ Ribos" : "Laukiama, kol ieškotojas nubrėš ribas", 5000);
   else setTimeout(fitGame, 50);
 })();
 </script>
