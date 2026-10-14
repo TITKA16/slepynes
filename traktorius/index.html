@@ -1,0 +1,659 @@
+<!doctype html>
+<html lang="lt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Tiesi Vaga">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#e6e9e2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#10120e" media="(prefers-color-scheme: dark)">
+<title>Tiesi Vaga</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap">
+<style>
+/* Kabinos prietaisas: būsenos juosta → švieslentė → žemėlapis linijos kryptimi → mygtukai po nykščiu */
+:root{
+  --bg:#e6e9e2; --panel:#f7f8f4; --fg:#171a15; --muted:#596054; --rule:#c4c9bc;
+  --accent:#d45d08; --accent-ink:#ffffff; --map:#dde2d5; --grid:rgba(23,26,21,.22);
+  --trail:rgba(128,94,50,.30); --ok:#24843a; --warn:#b37a00; --bad:#c42d1e; --led-off:#cdd2c5;
+  --shadow:0 10px 30px rgba(23,26,21,.18);
+  --f-ui:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-num:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#10120e; --panel:#1a1d17; --fg:#eef1ea; --muted:#9ba293; --rule:#30352b;
+  --accent:#ff8526; --accent-ink:#1a0e02; --map:#161913; --grid:rgba(238,241,234,.20);
+  --trail:rgba(214,170,104,.24); --ok:#4cc562; --warn:#f0b429; --bad:#ff5b45; --led-off:#2a2f25;
+  --shadow:0 10px 30px rgba(0,0,0,.5);
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#10120e; --panel:#1a1d17; --fg:#eef1ea; --muted:#9ba293; --rule:#30352b;
+  --accent:#ff8526; --accent-ink:#1a0e02; --map:#161913; --grid:rgba(238,241,234,.20);
+  --trail:rgba(214,170,104,.24); --ok:#4cc562; --warn:#f0b429; --bad:#ff5b45; --led-off:#2a2f25;
+  --shadow:0 10px 30px rgba(0,0,0,.5);
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{
+  background:var(--bg);color:var(--fg);
+  font:500 16px/1.35 var(--f-ui);
+  -webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent;
+  overflow:hidden;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+button{font:inherit;color:inherit}
+[hidden]{display:none!important}
+.gut{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.num{font-family:var(--f-num);font-variant-numeric:tabular-nums;font-weight:700;letter-spacing:.01em}
+.lbl{font-family:var(--f-num);font-weight:600;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+
+.app{
+  height:100%;display:grid;
+  grid-template-rows:auto auto minmax(0,1fr) auto;
+  grid-template-areas:"status" "guide" "map" "controls";
+}
+
+/* būsena */
+.status{grid-area:status;display:flex;align-items:center;gap:12px;padding-block:8px;border-bottom:1px solid var(--rule)}
+.pill{display:inline-flex;align-items:center;gap:7px;padding:5px 11px 5px 9px;border-radius:999px;background:var(--panel);border:1px solid var(--rule);font-family:var(--f-num);font-weight:700;font-size:1.05rem;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.pill .dot{width:10px;height:10px;border-radius:50%;background:var(--muted)}
+.pill[data-s="ok"] .dot{background:var(--ok)}
+.pill[data-s="warn"] .dot{background:var(--warn)}
+.pill[data-s="bad"] .dot{background:var(--bad)}
+.pill[data-s="demo"] .dot{background:var(--accent)}
+.pill[data-s="demo"]{text-transform:uppercase}
+.stat{display:flex;align-items:baseline;gap:5px;margin-left:auto}
+.stat + .stat{margin-left:14px}
+.stat .num{font-size:1.5rem;line-height:1}
+.stat .unit{font-family:var(--f-num);font-weight:600;color:var(--muted);font-size:.95rem}
+
+/* švieslentė */
+.guide{grid-area:guide;padding-block:10px 12px;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:6px 12px}
+.cue{display:flex;align-items:center;gap:10px;min-width:0;color:var(--fg)}
+.cue svg{width:46px;height:46px;flex:none;transition:transform .25s ease}
+.cue[data-dir="left"] svg{transform:rotate(-90deg)}
+.cue[data-dir="right"] svg{transform:rotate(90deg)}
+.cue[data-dir="info"] svg,.cue[data-dir="wait"] svg,.cue[data-dir="turn"] svg{display:none}
+.cue[data-z="ok"]{color:var(--ok)} .cue[data-z="warn"]{color:var(--warn)} .cue[data-z="bad"]{color:var(--bad)}
+.cue-txt{font-family:var(--f-num);font-weight:700;font-size:2rem;line-height:1;text-transform:uppercase;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cue[data-dir="info"] .cue-txt,.cue[data-dir="wait"] .cue-txt{font-size:1.45rem;text-transform:none;letter-spacing:0;color:var(--fg)}
+.off{text-align:right;line-height:1}
+.off .num{font-size:3rem}
+.off .unit{font-family:var(--f-num);font-weight:600;font-size:1.2rem;color:var(--muted);margin-left:3px}
+.off-side{grid-column:1/-1;color:var(--muted);font-size:.95rem;margin-top:-2px}
+.bar{grid-column:1/-1;position:relative;padding-block:8px 4px}
+.leds{display:grid;grid-template-columns:repeat(7,1fr) 1.4fr repeat(7,1fr);gap:4px}
+.led{height:26px;border-radius:4px;background:var(--led-off);transition:background .2s}
+.led[data-s="ok"]{background:var(--ok)}
+.led[data-s="warn"]{background:var(--warn)}
+.led[data-s="bad"]{background:var(--bad)}
+.led.c{outline:2px solid var(--fg);outline-offset:-2px}
+.marker{position:absolute;top:0;bottom:-2px;width:6px;margin-left:-3px;border-radius:3px;background:var(--fg);left:50%;transition:left .35s ease;box-shadow:0 0 0 2px var(--bg)}
+.bar.idle .led{background:var(--led-off)!important}
+.bar.idle .marker{opacity:.25}
+.bar-scale{display:flex;justify-content:space-between;margin-top:4px;color:var(--muted);font-family:var(--f-num);font-weight:600;font-size:.85rem;font-variant-numeric:tabular-nums}
+
+/* žemėlapis */
+.mapwrap{grid-area:map;position:relative;min-height:0;background:var(--map);overflow:hidden;border-block:1px solid var(--rule)}
+#map{display:block;width:100%;height:100%;touch-action:none}
+.zoom{position:absolute;right:max(12px,env(safe-area-inset-right,0px));top:12px;display:flex;flex-direction:column;gap:8px}
+.zoom button{width:48px;height:48px;border-radius:10px;border:1px solid var(--rule);background:var(--panel);font-family:var(--f-num);font-weight:700;font-size:1.6rem;line-height:1;cursor:pointer}
+.scale{position:absolute;left:max(12px,env(safe-area-inset-left,0px));bottom:12px;display:flex;flex-direction:column;gap:3px;font-family:var(--f-num);font-weight:600;font-size:.9rem;color:var(--muted)}
+.scale i{display:block;height:6px;border:2px solid var(--muted);border-top:0}
+
+.sheet{position:absolute;left:max(12px,env(safe-area-inset-left,0px));right:max(12px,env(safe-area-inset-right,0px));bottom:12px;background:var(--panel);border:1px solid var(--rule);border-radius:16px;box-shadow:var(--shadow);padding:16px 16px 14px;display:grid;gap:10px;max-height:calc(100% - 24px);overflow:auto}
+.sheet h1{margin:0;font-family:var(--f-num);font-weight:700;font-size:1.7rem;line-height:1;letter-spacing:.01em;text-wrap:balance}
+.sheet h1 span{color:var(--accent);font-size:.95rem;letter-spacing:.08em;text-transform:uppercase;margin-left:8px;vertical-align:3px}
+.sheet p{margin:0;color:var(--muted);font-size:.95rem}
+.sheet ol{margin:0;padding-left:1.25em;display:grid;gap:3px;font-size:.95rem}
+.err{color:var(--bad)!important;font-weight:600}
+
+/* mygtukai */
+.controls{grid-area:controls;display:flex;gap:10px;padding-block:10px}
+.btn{min-height:58px;border-radius:12px;border:1px solid var(--rule);background:var(--panel);font-family:var(--f-num);font-weight:700;font-size:1.3rem;letter-spacing:.02em;padding:0 14px;cursor:pointer;flex:1 1 0;min-width:0}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);flex-grow:1.5}
+.btn.arm{background:var(--bad);border-color:var(--bad);color:#fff}
+.btn.icon{flex:0 0 58px;padding:0;display:grid;place-items:center}
+.btn.icon svg{width:26px;height:26px}
+.btn:active{transform:translateY(1px)}
+button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+
+/* pranešimas */
+.toast{position:fixed;left:max(16px,env(safe-area-inset-left,0px));right:max(16px,env(safe-area-inset-right,0px));bottom:calc(84px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:12px;box-shadow:var(--shadow);z-index:20;font-weight:600}
+.toast span{flex:1;min-width:0}
+.toast button{background:none;border:0;color:var(--accent);font-family:var(--f-num);font-weight:700;font-size:1.15rem;text-transform:uppercase;letter-spacing:.04em;padding:6px 4px;cursor:pointer}
+
+/* nustatymai */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:30}
+.settings{position:fixed;left:0;right:0;bottom:0;max-height:85%;overflow:auto;background:var(--panel);border-radius:18px 18px 0 0;z-index:31;padding-top:18px;padding-bottom:calc(18px + env(safe-area-inset-bottom,0px));display:grid;gap:18px;box-shadow:var(--shadow)}
+.settings h2{margin:0;font-family:var(--f-num);font-weight:700;font-size:1.5rem}
+.field{display:grid;gap:8px}
+.stepper{display:flex;gap:8px;align-items:stretch}
+.stepper button{width:56px;min-height:52px;border-radius:10px;border:1px solid var(--rule);background:var(--bg);font-family:var(--f-num);font-weight:700;font-size:1.6rem;cursor:pointer}
+.stepper input{flex:1;min-width:0;min-height:52px;border-radius:10px;border:1px solid var(--rule);background:var(--bg);color:var(--fg);text-align:center;font-family:var(--f-num);font-weight:700;font-size:1.6rem}
+.seg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.seg label{position:relative}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg span{display:grid;place-items:center;min-height:48px;border-radius:10px;border:1px solid var(--rule);background:var(--bg);font-family:var(--f-num);font-weight:700;font-size:1.15rem;cursor:pointer}
+.seg input:checked + span{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.seg input:focus-visible + span{outline:3px solid var(--accent);outline-offset:2px}
+.toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:52px}
+.toggle input{width:24px;height:24px;accent-color:var(--accent)}
+.hint{margin:0;color:var(--muted);font-size:.92rem;max-width:62ch}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.row .btn{min-height:50px;font-size:1.1rem}
+
+/* gulsčias telefonas */
+@media (orientation:landscape) and (max-height:560px){
+  .app{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;grid-template-areas:"map status" "map guide" "map controls"}
+  .mapwrap{border-block:0;border-right:1px solid var(--rule)}
+  .guide{align-content:center}
+  .cue-txt{font-size:1.7rem}
+  .off .num{font-size:2.5rem}
+  .toast{left:auto;width:min(420px,48%)}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2.5 21 12.2h-5.6V21.5H8.6v-9.3H3z"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M10.3 2.8h3.4l.5 2.6 1.8.8 2.2-1.5 2.4 2.4-1.5 2.2.8 1.8 2.6.5v3.4l-2.6.5-.8 1.8 1.5 2.2-2.4 2.4-2.2-1.5-1.8.8-.5 2.6h-3.4l-.5-2.6-1.8-.8-2.2 1.5-2.4-2.4 1.5-2.2-.8-1.8-2.6-.5v-3.4l2.6-.5.8-1.8-1.5-2.2 2.4-2.4 2.2 1.5 1.8-.8z"/><circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+</svg>
+
+<div class="app">
+  <header class="status gut">
+    <div class="pill" id="gpsPill" data-s="demo"><span class="dot"></span><span id="gpsTxt">Demo</span></div>
+    <div class="stat"><span class="num" id="spd">0,0</span><span class="unit">km/h</span></div>
+    <div class="stat"><span class="lbl">Eilė</span><span class="num" id="pass">–</span></div>
+  </header>
+
+  <section class="guide gut" aria-live="polite">
+    <div class="cue" id="cue" data-dir="wait"><svg aria-hidden="true"><use href="#i-arrow"/></svg><span class="cue-txt" id="cueTxt">Laukiama GPS</span></div>
+    <div class="off"><span class="num" id="offNum">–</span><span class="unit" id="offUnit"></span></div>
+    <div class="off-side" id="offSide">&nbsp;</div>
+    <div class="bar idle" id="bar">
+      <div class="leds" id="leds"></div>
+      <div class="marker" id="marker"></div>
+      <div class="bar-scale"><span id="scL">1,75 m</span><span>linija</span><span id="scR">1,75 m</span></div>
+    </div>
+  </section>
+
+  <section class="mapwrap">
+    <canvas id="map" aria-label="Žemėlapis: traktorius, A–B linija ir gretimos eilės"></canvas>
+    <div class="zoom"><button id="zin" aria-label="Priartinti">+</button><button id="zout" aria-label="Nutolinti">−</button></div>
+    <div class="scale"><span id="scaleTxt">10 m</span><i id="scaleBar" style="width:50px"></i></div>
+
+    <div class="sheet" id="sheet">
+      <h1>Tiesi Vaga<span>demo</span></h1>
+      <p>Telefono GPS rodo, kiek nukrypai nuo linijos ir į kurią pusę sukti. Dabar važiuoja bandomasis traktorius.</p>
+      <ol>
+        <li>Pirmos vagos pradžioje spausk „Pažymėti A“.</li>
+        <li>Nuvažiuok iki lauko galo ir spausk „Pažymėti B“.</li>
+        <li>Važiuok pagal rodyklę. Kitos eilės išsidėlioja pagal padargo plotį.</li>
+      </ol>
+      <button class="btn primary" id="startGps">Įjungti GPS</button>
+      <p class="err" id="startErr" hidden></p>
+    </div>
+  </section>
+
+  <footer class="controls gut">
+    <button class="btn primary" id="b1">Pažymėti A</button>
+    <button class="btn" id="b2" hidden>Atšaukti A</button>
+    <button class="btn icon" id="bSet" aria-label="Nustatymai"><svg aria-hidden="true"><use href="#i-gear"/></svg></button>
+  </footer>
+</div>
+
+<div class="toast" id="toast" role="status" hidden><span id="toastMsg"></span><button id="toastAct" hidden></button></div>
+
+<div class="scrim" id="scrim" hidden></div>
+<div class="settings gut" id="settings" role="dialog" aria-label="Nustatymai" hidden>
+  <h2>Nustatymai</h2>
+  <div class="field">
+    <span class="lbl">Padargo plotis, m</span>
+    <div class="stepper">
+      <button id="wMinus" aria-label="Siauriau">−</button>
+      <input id="wIn" type="text" inputmode="decimal" value="6" aria-label="Padargo plotis metrais">
+      <button id="wPlus" aria-label="Plačiau">+</button>
+    </div>
+    <p class="hint">Atstumas tarp gretimų eilių. Jei nori persidengimo, įrašyk šiek tiek mažiau nei padargo plotis.</p>
+  </div>
+  <div class="field">
+    <span class="lbl">Viena lemputė =</span>
+    <div class="seg">
+      <label><input type="radio" name="step" value="0.1" id="st1"><span>10 cm</span></label>
+      <label><input type="radio" name="step" value="0.25" id="st2"><span>25 cm</span></label>
+      <label><input type="radio" name="step" value="0.5" id="st3"><span>50 cm</span></label>
+    </div>
+  </div>
+  <label class="toggle"><span><span class="lbl" style="display:block">Garsas</span><span class="hint">Aukštas pypsėjimas – suk dešinėn, žemas – kairėn.</span></span><input type="checkbox" id="sndIn"></label>
+  <p class="hint" id="abInfo"></p>
+  <p class="hint">Telefono GPS paklaida būna 2–5 m, todėl per kelias minutes linija gali pasislinkti. Užvažiavęs ant tikros vagos spausk „Linija čia“, ir linija persikels po traktoriumi.</p>
+  <div class="row">
+    <button class="btn" id="clrTrail">Valyti pėdsaką</button>
+    <button class="btn primary" id="closeSet">Uždaryti</button>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const DEG = Math.PI / 180, M_LAT = 110574, M_LON = 111320;
+const LS = 'tiesi-vaga-v1';
+const HALF = 7;
+
+/* ---------- būsena ---------- */
+function loadCfg() {
+  const d = { A: null, B: null, width: 6, step: 0.25, shift: 0, sound: false, zoom: 5 };
+  try { const s = JSON.parse(localStorage.getItem(LS) || 'null'); if (s && typeof s === 'object') return Object.assign(d, s); } catch (e) {}
+  return d;
+}
+const S = {
+  mode: 'demo', silent: false, origin: null, pos: null, acc: null, speed: 0, heading: null, headRef: null,
+  lastFixT: 0, lastRaw: null, trail: [], dirSign: 1, g: null,
+  A: null, B: null, width: 6, step: 0.25, shift: 0, sound: false, zoom: 5
+};
+function saveCfg() {
+  if (S.mode !== 'gps') return;
+  try { localStorage.setItem(LS, JSON.stringify({ A: S.A, B: S.B, width: S.width, step: S.step, shift: S.shift, sound: S.sound, zoom: S.zoom })); } catch (e) {}
+}
+
+/* ---------- koordinatės ---------- */
+function toXY(lat, lon) { const o = S.origin; return { x: (lon - o.lon) * M_LON * o.c, y: (lat - o.lat) * M_LAT }; }
+function toLL(x, y) { const o = S.origin; return { lat: o.lat + y / M_LAT, lon: o.lon + x / (M_LON * o.c) }; }
+const round7 = v => Math.round(v * 1e7) / 1e7;
+const fmt = (n, d) => n.toFixed(d).replace('.', ',');
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+/* ---------- GPS taškas ---------- */
+function onFix(lat, lon, acc, speed, heading, t) {
+  if (!S.origin) S.origin = { lat, lon, c: Math.cos(lat * DEG) };
+  const p = toXY(lat, lon);
+  const hasSpeed = speed != null && !isNaN(speed);
+  let v = hasSpeed ? speed : S.speed;
+  if (!hasSpeed && S.lastRaw) {
+    const dt = (t - S.lastRaw.t) / 1000;
+    if (dt > 0.2) v = S.speed * 0.5 + 0.5 * Math.hypot(p.x - S.lastRaw.x, p.y - S.lastRaw.y) / dt;
+  }
+  S.lastRaw = { x: p.x, y: p.y, t };
+  S.speed = v || 0;
+
+  if (!S.pos) S.pos = { x: p.x, y: p.y };
+  else {
+    const jump = Math.hypot(p.x - S.pos.x, p.y - S.pos.y);
+    const a = jump > 15 ? 1 : 0.55;
+    S.pos.x += a * (p.x - S.pos.x); S.pos.y += a * (p.y - S.pos.y);
+  }
+  S.acc = acc; S.lastFixT = performance.now();
+
+  if (heading != null && !isNaN(heading) && S.speed > 0.6) {
+    S.heading = heading * DEG; S.headRef = { x: S.pos.x, y: S.pos.y };
+  } else {
+    if (!S.headRef) S.headRef = { x: S.pos.x, y: S.pos.y };
+    const dx = S.pos.x - S.headRef.x, dy = S.pos.y - S.headRef.y;
+    if (S.speed > 0.4 && Math.hypot(dx, dy) >= 2) { S.heading = Math.atan2(dx, dy); S.headRef = { x: S.pos.x, y: S.pos.y }; }
+  }
+
+  const last = S.trail[S.trail.length - 1];
+  if (!last || Math.hypot(S.pos.x - last.x, S.pos.y - last.y) >= 0.8) {
+    S.trail.push({ x: S.pos.x, y: S.pos.y });
+    if (S.trail.length > 8000) S.trail.splice(0, 1000);
+  }
+  if (!S.silent) update();
+}
+
+/* ---------- linijos skaičiavimas ---------- */
+function guidance() {
+  if (!S.A || !S.B || !S.pos || !S.origin) return null;
+  const a = toXY(S.A.lat, S.A.lon), b = toXY(S.B.lat, S.B.lon);
+  let ux = b.x - a.x, uy = b.y - a.y; const len = Math.hypot(ux, uy);
+  if (len < 1) return null;
+  ux /= len; uy /= len;
+  const nx = -uy, ny = ux;                         // kairė nuo A→B
+  const px = S.pos.x - a.x, py = S.pos.y - a.y;
+  const along = px * ux + py * uy, cross = px * nx + py * ny;
+  const W = S.width;
+  const k = Math.round((cross - S.shift) / W);
+  const e = cross - S.shift - k * W;               // + = kairiau nuo A→B krypties
+
+  const moving = S.heading != null && S.speed > 0.5;
+  let hx = 0, hy = 0, dot = 1;
+  if (moving) { hx = Math.sin(S.heading); hy = Math.cos(S.heading); dot = hx * ux + hy * uy; if (Math.abs(dot) > 0.35) S.dirSign = dot > 0 ? 1 : -1; }
+  const s = S.dirSign;
+  const eT = e * s;                                // + = traktorius kairiau linijos (važiavimo kryptimi)
+  let sinAng = 0;
+  if (moving) { const dx = s * ux, dy = s * uy; sinAng = dx * hy - dy * hx; } // + = nosis į kairę
+  const look = Math.max(3, S.speed * 2);
+  const pred = eT + look * sinAng;
+  const turn = moving && Math.abs(dot) < 0.6;
+  return { a, ux, uy, len, along, cross, k, e, eT, pred, s, turn };
+}
+
+/* ---------- atvaizdavimas ---------- */
+const ledsEl = $('leds');
+const leds = [];
+for (let i = 0; i < HALF * 2 + 1; i++) { const d = document.createElement('div'); d.className = 'led' + (i === HALF ? ' c' : ''); ledsEl.appendChild(d); leds.push(d); }
+const zone = m => { const j = Math.abs(m) / S.step; return j <= 1 ? 'ok' : j <= 4 ? 'warn' : 'bad'; };
+
+function setCue(dir, txt, z) { const c = $('cue'); c.dataset.dir = dir; c.dataset.z = z || ''; $('cueTxt').textContent = txt; }
+function setOff(m, side) {
+  if (m == null) { $('offNum').textContent = '–'; $('offUnit').textContent = ''; }
+  else {
+    const a = Math.abs(m);
+    if (a < 1) { $('offNum').textContent = String(Math.round(a * 100)); $('offUnit').textContent = 'cm'; }
+    else { $('offNum').textContent = fmt(a, a < 10 ? 2 : (a < 100 ? 1 : 0)); $('offUnit').textContent = 'm'; }
+  }
+  $('offSide').textContent = side || ' ';
+}
+function setBar(eT) {
+  const bar = $('bar');
+  const range = HALF * S.step;
+  $('scL').textContent = $('scR').textContent = fmt(range, range < 1 ? 2 : 1) + ' m';
+  if (eT == null) { bar.classList.add('idle'); $('marker').style.left = '50%'; leds.forEach(l => l.dataset.s = ''); return; }
+  bar.classList.remove('idle');
+  const n = clamp(eT / range, -1.07, 1.07);
+  $('marker').style.left = (50 - n * 46.5) + '%';
+  const j = Math.min(HALF, Math.round(Math.abs(eT) / S.step));
+  const leftSide = eT > 0;
+  leds.forEach((l, i) => {
+    const dist = Math.abs(i - HALF);
+    const onSide = i === HALF || (leftSide ? i < HALF : i > HALF);
+    const lit = i === HALF || (onSide && dist <= j && j > 0);
+    l.dataset.s = !lit ? '' : (dist <= 1 ? 'ok' : dist <= 4 ? 'warn' : 'bad');
+  });
+}
+
+function renderGuide() {
+  const g = S.g;
+  if (!S.pos) { setCue('wait', 'Laukiama GPS'); setOff(null, S.mode === 'gps' ? 'Lauke po atviru dangumi signalas atsiranda per ~30 s' : ''); setBar(null); return; }
+  if (!S.A) { setCue('info', 'Pažymėk A tašką'); setOff(null, 'Atsistok pirmos vagos pradžioje ir spausk „Pažymėti A“'); setBar(null); return; }
+  if (!S.B) {
+    const a = toXY(S.A.lat, S.A.lon);
+    const d = Math.hypot(S.pos.x - a.x, S.pos.y - a.y);
+    setCue('info', 'Važiuok iki galo');
+    setOff(d, d < 10 ? 'nuo A taško · B galima žymėti nuo 10 m' : 'nuo A taško · gale spausk „Pažymėti B“');
+    setBar(null); return;
+  }
+  if (!g) { setCue('wait', 'Linija per trumpa'); setOff(null, 'Spausk „Nauja A–B“'); setBar(null); return; }
+  if (g.turn) { setCue('turn', 'Posūkis'); setOff(g.eT, 'Kita eilė: ' + passLabel(g.k)); setBar(null); return; }
+  const dead = Math.max(0.12, S.step * 0.6);
+  const side = Math.abs(g.eT) < 0.05 ? 'ant linijos' : (g.eT > 0 ? 'esi kairiau linijos' : 'esi dešiniau linijos');
+  if (Math.abs(g.pred) < dead) setCue('up', 'Tiesiai', 'ok');
+  else if (g.pred > 0) setCue('right', 'Dešinėn', zone(g.eT));
+  else setCue('left', 'Kairėn', zone(g.eT));
+  setOff(g.eT, side);
+  setBar(g.eT);
+}
+const passLabel = k => k === 0 ? '0 (A–B)' : (k > 0 ? '+' : '−') + Math.abs(k);
+
+function renderStatus() {
+  const pill = $('gpsPill'); let st, txt;
+  if (S.mode === 'demo') { st = 'demo'; txt = 'Demo'; }
+  else if (!S.pos) { st = 'bad'; txt = 'Ieško GPS'; }
+  else if (performance.now() - S.lastFixT > 4000) { st = 'bad'; txt = 'Nėra signalo'; }
+  else { const a = S.acc || 0; st = a <= 3 ? 'ok' : a <= 8 ? 'warn' : 'bad'; txt = '±' + (a < 10 ? fmt(a, 1) : Math.round(a)) + ' m'; }
+  pill.dataset.s = st; $('gpsTxt').textContent = txt;
+  $('spd').textContent = fmt(S.speed * 3.6, 1);
+  $('pass').textContent = S.g ? (S.g.k < 0 ? '−' + Math.abs(S.g.k) : String(S.g.k)) : '–';
+}
+
+function renderControls() {
+  const b1 = $('b1'), b2 = $('b2');
+  b2.classList.remove('arm');
+  if (!S.A) { b1.textContent = 'Pažymėti A'; b1.dataset.act = 'A'; b2.hidden = true; }
+  else if (!S.B) { b1.textContent = 'Pažymėti B'; b1.dataset.act = 'B'; b2.hidden = false; b2.textContent = 'Atšaukti A'; b2.dataset.act = 'undoA'; }
+  else { b1.textContent = 'Linija čia'; b1.dataset.act = 'here'; b2.hidden = false; b2.textContent = 'Nauja A–B'; b2.dataset.act = 'new'; }
+  const g = S.A && S.B && S.origin ? (() => { const a = toXY(S.A.lat, S.A.lon), b = toXY(S.B.lat, S.B.lon); return Math.hypot(b.x - a.x, b.y - a.y); })() : null;
+  $('abInfo').textContent = g ? 'A–B linijos ilgis ' + Math.round(g) + ' m.' : '';
+}
+
+function update() { S.g = guidance(); renderGuide(); renderStatus(); draw(); }
+
+/* ---------- žemėlapis ---------- */
+const cv = $('map'), ctx = cv.getContext('2d');
+function sizeCanvas() {
+  const r = cv.getBoundingClientRect(); const d = Math.min(window.devicePixelRatio || 1, 3);
+  cv.width = Math.max(1, Math.round(r.width * d)); cv.height = Math.max(1, Math.round(r.height * d)); draw();
+}
+function draw() {
+  const W = cv.clientWidth, H = cv.clientHeight; if (!W || !H) return;
+  const d = cv.width / W; ctx.setTransform(d, 0, 0, d, 0, 0);
+  const cs = getComputedStyle(document.documentElement); const c = n => cs.getPropertyValue(n).trim();
+  ctx.fillStyle = c('--map'); ctx.fillRect(0, 0, W, H);
+  updateScale();
+  if (!S.pos) {
+    ctx.fillStyle = c('--muted'); ctx.font = '600 17px "Barlow Condensed", sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('Laukiama GPS signalo…', W / 2, H * 0.4); return;
+  }
+  const g = S.g;
+  let dx = 0, dy = 1;
+  if (g) { dx = g.s * g.ux; dy = g.s * g.uy; } else if (S.heading != null) { dx = Math.sin(S.heading); dy = Math.cos(S.heading); }
+  const lx = -dy, ly = dx, sc = S.zoom, cx = W / 2, cy = H * 0.7;
+  const P = (x, y) => { const vx = x - S.pos.x, vy = y - S.pos.y; return [cx - (vx * lx + vy * ly) * sc, cy - (vx * dx + vy * dy) * sc]; };
+
+  // apdirbtas plotas
+  if (S.trail.length > 1) {
+    ctx.strokeStyle = c('--trail'); ctx.lineWidth = Math.max(2, S.width * sc); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath(); let prev = null;
+    for (const t of S.trail) {
+      const [x, y] = P(t.x, t.y);
+      if (!prev || Math.hypot(t.x - prev.x, t.y - prev.y) > 6) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      prev = t;
+    }
+    const [tx, ty] = P(S.pos.x, S.pos.y); ctx.lineTo(tx, ty);
+    ctx.stroke();
+  }
+
+  // eilės
+  ctx.font = '700 14px "Barlow Condensed", sans-serif'; ctx.textAlign = 'center';
+  if (g) {
+    const span = Math.ceil((W / 2) / (S.width * sc)) + 1;
+    for (let k = g.k - span; k <= g.k + span; k++) {
+      const lat = (k * S.width + S.shift - g.cross) * g.s;
+      const x = cx - lat * sc;
+      if (x < -20 || x > W + 20) continue;
+      const on = k === g.k;
+      ctx.strokeStyle = on ? c('--accent') : c('--grid'); ctx.lineWidth = on ? 3 : 1.5; ctx.setLineDash(on ? [] : [7, 7]);
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+      if (x > 14 && x < W - 64) { ctx.fillStyle = on ? c('--accent') : c('--muted'); ctx.fillText(k < 0 ? '−' + Math.abs(k) : String(k), x, 18); }
+    }
+    ctx.setLineDash([]);
+  }
+  // A ir B taškai
+  const pin = (ll, label) => {
+    const p = toXY(ll.lat, ll.lon); const [x, y] = P(p.x, p.y);
+    if (x < -30 || x > W + 30 || y < -30 || y > H + 30) return;
+    ctx.fillStyle = c('--fg'); ctx.beginPath(); ctx.arc(x, y, 11, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = c('--bg'); ctx.font = '700 14px "Barlow Condensed", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(label, x, y + 1); ctx.textBaseline = 'alphabetic';
+  };
+  if (S.A && !S.B) {
+    const a = toXY(S.A.lat, S.A.lon); const [ax, ay] = P(a.x, a.y);
+    ctx.strokeStyle = c('--accent'); ctx.lineWidth = 2; ctx.setLineDash([6, 6]);
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(cx, cy); ctx.stroke(); ctx.setLineDash([]);
+  }
+  if (S.A) pin(S.A, 'A');
+  if (S.B) pin(S.B, 'B');
+
+  // traktorius
+  let rel = 0;
+  if (S.heading != null) { const hx = Math.sin(S.heading), hy = Math.cos(S.heading); rel = Math.atan2(dx * hy - dy * hx, dx * hx + dy * hy); }
+  const s = Math.max(10, Math.min(26, 1.6 * sc));
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(-rel);
+  ctx.fillStyle = c('--fg'); ctx.globalAlpha = 0.6;
+  ctx.fillRect(-S.width * sc / 2, s * 1.25, S.width * sc, Math.max(3, 0.5 * sc));
+  ctx.globalAlpha = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, -s * 1.5); ctx.lineTo(s * 0.85, -s * 0.2); ctx.lineTo(s * 0.85, s * 1.05); ctx.lineTo(-s * 0.85, s * 1.05); ctx.lineTo(-s * 0.85, -s * 0.2); ctx.closePath();
+  ctx.fillStyle = c('--accent'); ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = c('--panel'); ctx.stroke();
+  ctx.restore();
+}
+function updateScale() {
+  const target = 80 / S.zoom; const steps = [1, 2, 5, 10, 20, 25, 50, 100, 200];
+  const m = steps.reduce((b, v) => Math.abs(v - target) < Math.abs(b - target) ? v : b, steps[0]);
+  $('scaleTxt').textContent = m + ' m'; $('scaleBar').style.width = Math.round(m * S.zoom) + 'px';
+}
+if ('ResizeObserver' in window) new ResizeObserver(sizeCanvas).observe(cv); else window.addEventListener('resize', sizeCanvas);
+try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw); } catch (e) {}
+new MutationObserver(draw).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+/* ---------- pranešimai ---------- */
+let toastT;
+function toast(msg, actLabel, fn) {
+  const t = $('toast'), b = $('toastAct');
+  $('toastMsg').textContent = msg;
+  if (actLabel) { b.hidden = false; b.textContent = actLabel; b.onclick = () => { fn(); t.hidden = true; }; } else b.hidden = true;
+  t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, actLabel ? 6000 : 3200);
+}
+
+/* ---------- veiksmai ---------- */
+let armT = null;
+function act(a) {
+  if (a === 'A') {
+    if (!S.pos) return toast('Dar nėra GPS signalo');
+    S.A = toLLr(S.pos); S.B = null; S.shift = 0;
+    toast(S.acc > 10 ? 'A pažymėtas, bet GPS silpnas (±' + Math.round(S.acc) + ' m)' : 'A pažymėtas. Važiuok iki galo.');
+  } else if (a === 'B') {
+    if (!S.pos) return toast('Dar nėra GPS signalo');
+    const p = toXY(S.A.lat, S.A.lon); const dist = Math.hypot(S.pos.x - p.x, S.pos.y - p.y);
+    if (dist < 10) return toast('Per arti A (' + Math.round(dist) + ' m). Nuvažiuok bent 10 m.');
+    S.B = toLLr(S.pos); S.dirSign = 1; S.shift = 0;
+    toast('Linija nustatyta · ' + Math.round(dist) + ' m');
+  } else if (a === 'undoA') {
+    S.A = null;
+  } else if (a === 'here') {
+    if (!S.g) return;
+    const prev = S.shift, moved = S.g.e;
+    S.shift += moved;
+    toast('Linija perkelta ' + (Math.abs(moved) < 1 ? Math.round(Math.abs(moved) * 100) + ' cm' : fmt(Math.abs(moved), 2) + ' m'), 'Atšaukti', () => { S.shift = prev; saveCfg(); update(); });
+  } else if (a === 'new') {
+    const b2 = $('b2');
+    if (!b2.classList.contains('arm')) {
+      b2.classList.add('arm'); b2.textContent = 'Tikrai? Dar kartą';
+      clearTimeout(armT); armT = setTimeout(renderControls, 3000); return;
+    }
+    clearTimeout(armT); S.A = null; S.B = null; S.shift = 0;
+    toast('Linija ištrinta. Pažymėk naują A.');
+  }
+  saveCfg(); renderControls(); update();
+}
+function toLLr(p) { const ll = toLL(p.x, p.y); return { lat: round7(ll.lat), lon: round7(ll.lon) }; }
+$('b1').addEventListener('click', e => act(e.currentTarget.dataset.act));
+$('b2').addEventListener('click', e => act(e.currentTarget.dataset.act));
+$('zin').addEventListener('click', () => { S.zoom = clamp(S.zoom * 1.4, 1, 40); saveCfg(); draw(); });
+$('zout').addEventListener('click', () => { S.zoom = clamp(S.zoom / 1.4, 1, 40); saveCfg(); draw(); });
+
+/* ---------- nustatymai ---------- */
+function syncSettings() {
+  $('wIn').value = String(S.width).replace('.', ',');
+  [['st1', 0.1], ['st2', 0.25], ['st3', 0.5]].forEach(([id, v]) => { $(id).checked = Math.abs(S.step - v) < 1e-6; });
+  $('sndIn').checked = S.sound;
+}
+function setWidth(v) { if (!isFinite(v)) return syncSettings(); S.width = clamp(Math.round(v * 100) / 100, 0.5, 60); saveCfg(); syncSettings(); update(); }
+$('wIn').addEventListener('change', e => setWidth(parseFloat(String(e.target.value).replace(',', '.'))));
+$('wMinus').addEventListener('click', () => setWidth(S.width - 0.5));
+$('wPlus').addEventListener('click', () => setWidth(S.width + 0.5));
+document.querySelectorAll('input[name="step"]').forEach(r => r.addEventListener('change', e => { S.step = parseFloat(e.target.value); saveCfg(); update(); }));
+$('sndIn').addEventListener('change', e => { S.sound = e.target.checked; if (S.sound) initAudio(); saveCfg(); });
+$('clrTrail').addEventListener('click', () => { S.trail = []; draw(); toast('Pėdsakas išvalytas'); });
+const openSet = () => { syncSettings(); renderControls(); $('settings').hidden = false; $('scrim').hidden = false; };
+const closeSet = () => { $('settings').hidden = true; $('scrim').hidden = true; };
+$('bSet').addEventListener('click', openSet);
+$('closeSet').addEventListener('click', closeSet);
+$('scrim').addEventListener('click', closeSet);
+
+/* ---------- garsas ---------- */
+let actx = null, lastBeep = 0;
+function initAudio() { try { if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === 'suspended') actx.resume(); } catch (e) {} }
+function beep(freq) {
+  if (!actx) return; const t = actx.currentTime; const o = actx.createOscillator(), gn = actx.createGain();
+  o.type = 'square'; o.frequency.value = freq; gn.gain.setValueAtTime(0.0001, t);
+  gn.gain.exponentialRampToValueAtTime(0.18, t + 0.01); gn.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+  o.connect(gn).connect(actx.destination); o.start(t); o.stop(t + 0.1);
+}
+setInterval(() => {
+  const g = S.g; if (!S.sound || !g || g.turn) return;
+  const e = g.pred; if (Math.abs(e) < Math.max(0.2, S.step * 1.5)) return;
+  const now = performance.now(), gap = Math.max(180, 1100 - Math.abs(e) * 450);
+  if (now - lastBeep > gap) { beep(e > 0 ? 1050 : 500); lastBeep = now; }
+}, 60);
+
+/* ---------- ekranas neužgęsta ---------- */
+let wl = null;
+async function keepAwake() { try { if ('wakeLock' in navigator && document.visibilityState === 'visible') wl = await navigator.wakeLock.request('screen'); } catch (e) {} }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.mode === 'gps') keepAwake(); });
+
+/* ---------- tikras GPS ---------- */
+let watchId = null;
+function startGPS() {
+  const err = $('startErr'); err.hidden = true;
+  if (!('geolocation' in navigator)) { err.textContent = 'Ši naršyklė nepalaiko vietos nustatymo.'; err.hidden = false; return; }
+  if (!window.isSecureContext) { err.textContent = 'GPS naršyklėje veikia tik per https:// adresą. Atidaryk programėlę per jos nuorodą internete.'; err.hidden = false; return; }
+  stopDemo();
+  const c = loadCfg();
+  Object.assign(S, { mode: 'gps', origin: null, pos: null, acc: null, speed: 0, heading: null, headRef: null, lastRaw: null, trail: [], dirSign: 1, g: null,
+    A: c.A, B: c.B, width: c.width, step: c.step, shift: c.shift, sound: c.sound, zoom: c.zoom });
+  $('sheet').hidden = true;
+  syncSettings(); renderControls(); update();
+  initAudio(); keepAwake();
+  watchId = navigator.geolocation.watchPosition(
+    p => onFix(p.coords.latitude, p.coords.longitude, p.coords.accuracy, p.coords.speed, p.coords.heading, p.timestamp || Date.now()),
+    e => {
+      if (e.code === 1) {
+        navigator.geolocation.clearWatch(watchId);
+        err.textContent = 'Naršyklė neleido naudoti vietos. Telefono nustatymuose leisk naršyklei naudoti tikslią vietą ir spausk dar kartą.';
+        err.hidden = false; $('sheet').hidden = false;
+      } else toast('GPS signalas silpnas, ieškoma…');
+    },
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
+  );
+  if (S.A && S.B) toast('Įkelta paskutinė A–B linija');
+}
+$('startGps').addEventListener('click', startGPS);
+setInterval(() => { if (S.mode === 'gps') renderStatus(); }, 1000);
+
+/* ---------- demonstracija ---------- */
+let demoTimer = null; const D = {};
+function startDemo() {
+  const A = { lat: 54.0, lon: 23.7 };
+  S.origin = { lat: A.lat, lon: A.lon, c: Math.cos(A.lat * DEG) };
+  const br = 24 * DEG, L = 150, ux = Math.sin(br), uy = Math.cos(br);
+  S.A = A; S.B = toLLr({ x: ux * L, y: uy * L }); S.width = 6; S.step = 0.25; S.shift = 0; S.zoom = 5;
+  Object.assign(D, { t: 0, al: 30, k: 0, s: 1, ph: 'line', th: 0, end: 0, since: 0, L, ux, uy, nx: -uy, ny: ux, v: 2.4 });
+  S.silent = true; for (let i = 0; i < 300; i++) demoStep(0.5); S.silent = false;
+  renderControls(); update();
+  demoTimer = setInterval(() => demoStep(0.5), 500);
+}
+function stopDemo() { clearInterval(demoTimer); demoTimer = null; }
+function demoStep(dt) {
+  const W = S.width, r = W / 2; D.t += dt;
+  if (D.ph === 'line') {
+    D.al += D.s * D.v * dt; D.since += D.v * dt;
+    if ((D.s > 0 && D.al >= D.L) || (D.s < 0 && D.al <= 0)) { D.ph = 'turn'; D.end = D.s > 0 ? D.L : 0; D.al = D.end; D.th = -Math.PI / 2; }
+  } else {
+    D.th += D.v / r * dt;
+    if (D.th >= Math.PI / 2) { D.ph = 'line'; D.k += 1; D.s = -D.s; D.al = D.end; D.since = 0; }
+  }
+  let al, cr;
+  if (D.ph === 'line') { const amp = Math.min(1, D.since / 20); al = D.al; cr = D.k * W + amp * (0.85 * Math.sin(D.t * 0.23) + 0.35 * Math.sin(D.t * 0.71 + 1)); }
+  else { al = D.end + D.s * r * Math.cos(D.th); cr = (D.k + 0.5) * W + r * Math.sin(D.th); }
+  const nz = () => (Math.random() - 0.5) * 0.3;
+  const ll = toLL(al * D.ux + cr * D.nx + nz(), al * D.uy + cr * D.ny + nz());
+  onFix(ll.lat, ll.lon, 2.4, D.v, null, D.t * 1000);
+}
+
+syncSettings();
+startDemo();
+})();
+</script>
+</body>
+</html>
